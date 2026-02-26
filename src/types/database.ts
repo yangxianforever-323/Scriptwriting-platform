@@ -24,6 +24,9 @@ export interface Database {
           style: string | null;
           shot_count: number;
           stage: project_stage;
+          // New fields for stage management
+          current_stage: project_stage_v2;
+          stage_progress: StageProgress;
           created_at: string;
           updated_at: string;
         };
@@ -35,6 +38,8 @@ export interface Database {
           style?: string | null;
           shot_count?: number;
           stage?: project_stage;
+          current_stage?: project_stage_v2;
+          stage_progress?: StageProgress;
           created_at?: string;
           updated_at?: string;
         };
@@ -46,6 +51,8 @@ export interface Database {
           style?: string | null;
           shot_count?: number;
           stage?: project_stage;
+          current_stage?: project_stage_v2;
+          stage_progress?: StageProgress;
           created_at?: string;
           updated_at?: string;
         };
@@ -174,6 +181,67 @@ export interface Database {
 }
 
 export type project_stage = "draft" | "scenes" | "images" | "videos" | "completed";
+
+// New stage system for non-linear workflow
+export type project_stage_v2 = 
+  | "planning"      // 项目规划
+  | "story"         // 故事开发
+  | "storyboard"    // 分镜设计
+  | "production"    // 素材创作
+  | "complete";     // 项目完成
+
+export type stage_status = "locked" | "active" | "completed";
+
+export interface StageProgress {
+  planning: {
+    status: stage_status;
+    completedAt?: string;
+    data?: {
+      logline?: string;
+      synopsis?: string;
+      targetDuration?: number;
+      genre?: string;
+    };
+  };
+  story: {
+    status: stage_status;
+    completedAt?: string;
+    data?: {
+      actsCount?: number;
+      scenesCount?: number;
+      charactersCount?: number;
+    };
+  };
+  storyboard: {
+    status: stage_status;
+    completedAt?: string;
+    data?: {
+      shotsCount?: number;
+      versionsCount?: number;
+    };
+  };
+  production: {
+    status: stage_status;
+    completedAt?: string;
+    data?: {
+      imagesCompleted?: number;
+      videosCompleted?: number;
+    };
+  };
+  complete: {
+    status: stage_status;
+    completedAt?: string;
+  };
+}
+
+export const DEFAULT_STAGE_PROGRESS: StageProgress = {
+  planning: { status: "active" },
+  story: { status: "locked" },
+  storyboard: { status: "locked" },
+  production: { status: "locked" },
+  complete: { status: "locked" },
+};
+
 export type image_status = "pending" | "processing" | "completed" | "failed";
 export type video_status = "pending" | "processing" | "completed" | "failed";
 

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { Project, Scene, Image, Video } from "@/types/database";
+import type { Project, Scene, Image, Video, DEFAULT_STAGE_PROGRESS } from "@/types/database";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROJECTS_FILE = path.join(DATA_DIR, "projects.json");
@@ -85,6 +85,24 @@ interface LocalDb {
     userId: string | null,
     stage: string
   ) => Project | null;
+  // New stage management methods
+  updateProjectCurrentStage: (
+    projectId: string,
+    userId: string | null,
+    stage: string
+  ) => Project | null;
+  updateStageProgress: (
+    projectId: string,
+    userId: string | null,
+    stage: string,
+    status: "locked" | "active" | "completed",
+    data?: Record<string, unknown>
+  ) => Project | null;
+  canAccessStage: (
+    projectId: string,
+    userId: string | null,
+    stage: string
+  ) => boolean;
   deleteProject: (projectId: string, userId: string | null) => boolean;
   createScenes: (
     projectId: string,
@@ -203,6 +221,9 @@ export const localDb: LocalDb = {
       style: style ?? null,
       shot_count: shotCount ?? 9,
       stage: "draft",
+      // New stage system
+      current_stage: "planning",
+      stage_progress: DEFAULT_STAGE_PROGRESS,
       created_at: now,
       updated_at: now,
     };
@@ -257,6 +278,56 @@ export const localDb: LocalDb = {
 
   updateProjectStage(projectId, userId, stage) {
     return this.updateProject(projectId, userId, { stage } as Partial<Project>);
+  },
+
+  // New stage management methods
+  updateProjectCurrentStage(projectId, userId, stage) {
+    return this.updateProject(projectId, userId, { 
+      current_stage: stage 
+    } as Partial<Project>);
+  },
+
+  updateStageProgress(projectId, userId, stage, status, data) {
+    const project = this.getProjectById(projectId, userId);
+    if (!project) return null;
+    
+    const stageProgress = project.stage_progress || DEFAULT_STAGE_PROGRESS;
+    const stageKey = stage as keyof typeof stageProgress;
+    
+    if (stageProgress[stageKey]) {
+      stageProgress[stageKey].status = status;
+      if (status === "completed") {
+        stageProgress[stageKey].completedAt = new Date().toISOString();
+      }
+      if (data) {
+        stageProgress[stageKey].data = { ...stageProgress[stageKey].data, ...data };
+      }
+      
+      // Unlock next stage if current is completed
+      const stageOrder = ["planning", "story", "storyboard", "production", "complete"];
+      const currentIndex = stageOrder.indexOf(stage);
+      if (status === "completed" && currentIndex < stageOrder.length - 1) {
+        const nextStage = stageOrder[currentIndex + 1];
+        const nextStageKey = nextStage as keyof typeof stageProgress;
+        if (stageProgress[nextStageKey] && stageProgress[nextStageKey].status === "locked") {
+          stageProgress[nextStageKey].status = "active";
+        }
+      }
+    }
+    
+    return this.updateProject(projectId, userId, { stage_progress: stageProgress });
+  },
+
+  canAccessStage(projectId, userId, stage) {
+    const project = this.getProjectById(projectId, userId);
+    if (!project) return false;
+    
+    const stageProgress = project.stage_progress || DEFAULT_STAGE_PROGRESS;
+    const stageKey = stage as keyof typeof stageProgress;
+    
+    if (!stageProgress[stageKey]) return false;
+    
+    return stageProgress[stageKey].status !== "locked";
   },
 
   deleteProject(projectId, userId) {
