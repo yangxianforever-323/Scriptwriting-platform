@@ -130,13 +130,11 @@ export async function POST(request: Request) {
         voice_type: s.voice_type,
         // Sound
         ambient_sound: s.ambient_sound,
-        ambient_sound_timing: s.ambient_sound_timing,
         action_sound: s.action_sound,
-        action_sound_timing: s.action_sound_timing,
         special_sound: s.special_sound,
-        special_sound_timing: s.special_sound_timing,
         music: s.music,
-        music_timing: s.music_timing,
+        music_mood: s.music_mood,
+        sound_timing: s.sound_timing,
         // VFX
         vfx: s.vfx,
         color_grading: s.color_grading,

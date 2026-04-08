@@ -41,9 +41,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { title, story, style, stage } = body;
+    const { title, story, style, stage, stage_progress } = body;
 
-    if (!title && story === undefined && style === undefined && !stage) {
+    if (!title && story === undefined && style === undefined && !stage && !stage_progress) {
       return NextResponse.json(
         { error: "At least one field is required" },
         { status: 400 }
@@ -65,6 +65,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       story,
       style,
       stage: stage as project_stage | undefined,
+      stage_progress,
     });
 
     return NextResponse.json({ project });

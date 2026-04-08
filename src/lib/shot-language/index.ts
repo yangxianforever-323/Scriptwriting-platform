@@ -13,6 +13,14 @@ export * from "./depth-of-field";
 export * from "./prompt-builder";
 export * from "./scene-analyzer";
 
+// Export lists for UI components
+export { SHOT_TYPE_LIST as shotTypes } from "./shot-types";
+export { CAMERA_MOVEMENT_LIST as cameraMovements } from "./camera-movements";
+export { CAMERA_ANGLE_LIST as cameraAngles } from "./camera-angles";
+export { DEPTH_OF_FIELD_LIST as depthOfField } from "./depth-of-field";
+export { COMPOSITION_LIST as compositions } from "./compositions";
+export { LIGHTING_LIST as lightingTypes } from "./lighting";
+
 import { analyzeScene, getOptimalConfiguration } from "./scene-analyzer";
 import { generatePrompts, generateShotSequence } from "./prompt-builder";
 import type {

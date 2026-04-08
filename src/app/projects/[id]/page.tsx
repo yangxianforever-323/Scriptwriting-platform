@@ -113,9 +113,32 @@ export default async function ProjectDetailPage({
             </div>
           </div>
 
+          {/* New Stage Workflow Entry */}
+          <div className="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-sm dark:border-blue-800 dark:bg-blue-900/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+                  新工作流
+                </h2>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  使用全新的5阶段创作流程：项目规划 → 故事开发 → 分镜设计 → 素材创作 → 项目完成
+                </p>
+              </div>
+              <Link
+                href={`/projects/${project.id}/planning`}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                进入新工作流
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+
           <div className="mb-8 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              项目进度
+              项目进度（旧版）
             </h2>
             <StageIndicator currentStage={project.stage} />
           </div>

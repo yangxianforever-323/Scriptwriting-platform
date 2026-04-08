@@ -7,6 +7,7 @@ import type {
   Project,
   ProjectWithScenes,
   project_stage,
+  StageProgress,
 } from "@/types/database";
 
 export class ProjectError extends Error {
@@ -83,10 +84,11 @@ export async function updateProject(
     style?: string;
     stage?: project_stage;
     shot_count?: number;
+    stage_progress?: Partial<StageProgress>;
   }
 ): Promise<Project> {
   try {
-    const project = localDb.updateProject(projectId, userId, updates);
+    const project = localDb.updateProject(projectId, userId, updates as Partial<Project>);
     if (!project) {
       throw new ProjectError("Project not found", "not_found");
     }

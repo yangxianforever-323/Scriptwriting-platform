@@ -2,338 +2,151 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { VideoStyle } from "@/types/ai";
-
-const STYLE_OPTIONS: {
-  id: VideoStyle;
-  name: string;
-  description: string;
-}[] = [
-  {
-    id: "realistic",
-    name: "写实风格",
-    description: "逼真的照片级效果，接近真实世界",
-  },
-  {
-    id: "anime",
-    name: "动漫风格",
-    description: "日式动漫风格，色彩鲜艳明亮",
-  },
-  {
-    id: "cartoon",
-    name: "卡通风格",
-    description: "可爱的卡通风格，适合儿童内容",
-  },
-  {
-    id: "cinematic",
-    name: "电影风格",
-    description: "电影质感，戏剧性的光影效果",
-  },
-  {
-    id: "watercolor",
-    name: "水彩风格",
-    description: "柔和的水彩画效果，艺术感强",
-  },
-  {
-    id: "oil_painting",
-    name: "油画风格",
-    description: "经典油画质感，厚重有层次",
-  },
-  {
-    id: "sketch",
-    name: "素描风格",
-    description: "黑白线条素描，简洁有韵味",
-  },
-  {
-    id: "cyberpunk",
-    name: "赛博朋克",
-    description: "未来科技感，霓虹灯光效果",
-  },
-  {
-    id: "fantasy",
-    name: "奇幻风格",
-    description: "魔法奇幻世界，神秘梦幻",
-  },
-  {
-    id: "scifi",
-    name: "科幻风格",
-    description: "硬科幻风格，太空与科技",
-  },
-];
-
-const GRID_OPTIONS: {
-  id: number;
-  name: string;
-  layout: string;
-  description: string;
-}[] = [
-  {
-    id: 9,
-    name: "9宫格",
-    layout: "3x3",
-    description: "适合短故事，快速预览",
-  },
-  {
-    id: 16,
-    name: "16宫格",
-    layout: "4x4",
-    description: "适合中等长度故事",
-  },
-  {
-    id: 25,
-    name: "25宫格",
-    layout: "5x5",
-    description: "适合完整故事，详细分镜",
-  },
-];
+import Link from "next/link";
 
 export default function CreateProjectPage() {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [story, setStory] = useState("");
-  const [style, setStyle] = useState<VideoStyle>("realistic");
-  const [shotCount, setShotCount] = useState<9 | 16 | 25>(9);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("");
+  const [projectType, setProjectType] = useState<"novel" | "script" | "idea">("novel");
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    if (!title.trim()) {
-      setError("请输入项目标题");
+    
+    if (!projectName.trim()) {
+      setError("请输入项目名称");
       return;
     }
 
-    if (!story.trim()) {
-      setError("请输入故事内容");
-      return;
-    }
-
-    setIsSubmitting(true);
+    setIsCreating(true);
+    setError("");
 
     try {
       const response = await fetch("/api/projects", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim(),
-          story: story.trim(),
-          style,
-          shotCount,
+          name: projectName,
+          type: projectType,
         }),
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "创建项目失败");
+        throw new Error("创建失败");
       }
 
-      const { project } = await response.json();
-      router.push(`/projects/${project.id}`);
+      const project = await response.json();
+      router.push(`/projects/${project.id}/planning`);
     } catch (err) {
-      console.error("Create project error:", err);
-      setError(err instanceof Error ? err.message : "创建项目失败，请重试");
+      setError("创建项目失败，请重试");
     } finally {
-      setIsSubmitting(false);
+      setIsCreating(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
-      <main className="flex flex-1 flex-col px-4 py-8">
-        <div className="mx-auto w-full max-w-3xl">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-white to-zinc-100 dark:from-zinc-900 dark:to-zinc-800">
+      <main className="flex flex-1 flex-col items-center justify-center px-4 py-16">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <Link href="/projects" className="inline-flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 mb-6">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              返回项目列表
+            </Link>
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
               创建新项目
             </h1>
-            <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-              输入您的故事，AI 将自动生成分镜脚本
+            <p className="text-zinc-600 dark:text-zinc-400">
+              输入项目信息，开始您的创作之旅
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                htmlFor="title"
-                className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                项目标题
-              </label>
-              <input
-                type="text"
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="为您的项目起个名字"
-                className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-zinc-900 placeholder-zinc-400 transition-colors focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
-                disabled={isSubmitting}
-              />
-            </div>
+          <form onSubmit={handleCreate} className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-6 shadow-lg">
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  项目名称 *
+                </label>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="输入项目名称"
+                  className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-zinc-500 focus:border-transparent"
+                />
+              </div>
 
-            <div>
-              <label
-                htmlFor="story"
-                className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-              >
-                故事内容
-              </label>
-              <textarea
-                id="story"
-                value={story}
-                onChange={(e) => setStory(e.target.value)}
-                placeholder="描述您想要转换成视频的故事...&#10;&#10;例如：一只小猫在公园里追逐蝴蝶，最后累得躺在草地上睡着了。"
-                rows={6}
-                className="w-full resize-none rounded-lg border border-zinc-300 bg-white px-4 py-3 text-zinc-900 placeholder-zinc-400 transition-colors focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
-                disabled={isSubmitting}
-              />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                AI 将自动分析您的故事，拆解成 {shotCount} 个分镜场景
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                分镜数量
-              </label>
-              <div className="grid grid-cols-3 gap-3">
-                {GRID_OPTIONS.map((option) => (
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
+                  项目类型
+                </label>
+                <div className="grid grid-cols-3 gap-3">
                   <button
-                    key={option.id}
                     type="button"
-                    onClick={() => setShotCount(option.id as 9 | 16 | 25)}
-                    disabled={isSubmitting}
-                    className={`flex flex-col rounded-lg border-2 p-4 text-left transition-all ${
-                      shotCount === option.id
-                        ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
-                        : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                    onClick={() => setProjectType("novel")}
+                    className={`p-4 rounded-lg border-2 transition-all text-center ${
+                      projectType === "novel"
+                        ? "border-zinc-600 bg-zinc-50 dark:bg-zinc-700"
+                        : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400"
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-lg font-bold ${
-                          shotCount === option.id
-                            ? "text-blue-600 dark:text-blue-400"
-                            : "text-zinc-900 dark:text-zinc-100"
-                        }`}
-                      >
-                        {option.name}
-                      </span>
-                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                        ({option.layout})
-                      </span>
-                    </div>
-                    <span className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {option.description}
-                    </span>
+                    <div className="text-2xl mb-1">📚</div>
+                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">小说改编</div>
+                    <div className="text-xs text-zinc-500 mt-1">导入小说AI分析</div>
                   </button>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                💡 分镜数量可在后续阶段调整
-              </p>
-            </div>
 
-            <div>
-              <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                视频风格
-              </label>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {STYLE_OPTIONS.map((option) => (
                   <button
-                    key={option.id}
                     type="button"
-                    onClick={() => setStyle(option.id)}
-                    disabled={isSubmitting}
-                    className={`flex flex-col rounded-lg border-2 p-3 text-left transition-all ${
-                      style === option.id
-                        ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800"
-                        : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                    onClick={() => setProjectType("script")}
+                    className={`p-4 rounded-lg border-2 transition-all text-center ${
+                      projectType === "script"
+                        ? "border-zinc-600 bg-zinc-50 dark:bg-zinc-700"
+                        : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400"
                     }`}
                   >
-                    <span
-                      className={`text-sm font-medium ${
-                        style === option.id
-                          ? "text-zinc-900 dark:text-zinc-100"
-                          : "text-zinc-700 dark:text-zinc-300"
-                      }`}
-                    >
-                      {option.name}
-                    </span>
-                    <span className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
-                      {option.description}
-                    </span>
+                    <div className="text-2xl mb-1">✍️</div>
+                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">原创剧本</div>
+                    <div className="text-xs text-zinc-500 mt-1">手动编写剧本</div>
                   </button>
-                ))}
-              </div>
-            </div>
 
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400">
-                {error}
+                  <button
+                    type="button"
+                    onClick={() => setProjectType("idea")}
+                    className={`p-4 rounded-lg border-2 transition-all text-center ${
+                      projectType === "idea"
+                        ? "border-zinc-600 bg-zinc-50 dark:bg-zinc-700"
+                        : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400"
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">💡</div>
+                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">创意想法</div>
+                    <div className="text-xs text-zinc-500 mt-1">AI辅助生成</div>
+                  </button>
+                </div>
               </div>
-            )}
 
-            <div className="flex items-center justify-end gap-4">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                disabled={isSubmitting}
-                className="rounded-lg border border-zinc-300 bg-white px-6 py-3 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                取消
-              </button>
+              {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+                  {error}
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="flex items-center gap-2 rounded-lg bg-zinc-900 px-6 py-3 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                disabled={isCreating}
+                className="w-full h-12 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? (
-                  <>
-                    <svg
-                      className="h-4 w-4 animate-spin"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    创建中...
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 4v16m8-8H4"
-                      />
-                    </svg>
-                    创建项目
-                  </>
-                )}
+                {isCreating ? "创建中..." : "创建项目"}
               </button>
             </div>
           </form>
+
+          <div className="mt-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            <p>创建后将进入项目规划阶段</p>
+          </div>
         </div>
       </main>
     </div>

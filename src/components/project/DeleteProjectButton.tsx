@@ -42,7 +42,7 @@ export function DeleteProjectButton({
     return (
       <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-900/20">
         <p className="text-sm text-red-700 dark:text-red-300">
-          确定要删除项目 "{projectTitle}" 吗？此操作不可撤销。
+          确定要删除项目 &ldquo;{projectTitle}&rdquo; 吗？此操作不可撤销。
         </p>
         <div className="flex gap-2">
           <button

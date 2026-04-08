@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
-import type { Project, Scene, Image, Video, DEFAULT_STAGE_PROGRESS } from "@/types/database";
+import type { Project, Scene, Image, Video } from "@/types/database";
+import { DEFAULT_STAGE_PROGRESS } from "@/types/database";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROJECTS_FILE = path.join(DATA_DIR, "projects.json");
@@ -156,15 +157,13 @@ interface LocalDb {
       dialogue_timing?: string;
       dialogue_tone?: string;
       voice_type?: string;
-      // 2.7 音效设计 (带时机)
+      // 2.7 音效设计
       ambient_sound?: string;
-      ambient_sound_timing?: string;
       action_sound?: string;
-      action_sound_timing?: string;
       special_sound?: string;
-      special_sound_timing?: string;
       music?: string;
-      music_timing?: string;
+      music_mood?: string;
+      sound_timing?: string;
       // 2.8 特效/后期
       vfx?: string;
       color_grading?: string;
@@ -295,12 +294,13 @@ export const localDb: LocalDb = {
     const stageKey = stage as keyof typeof stageProgress;
     
     if (stageProgress[stageKey]) {
-      stageProgress[stageKey].status = status;
+      const stageData = stageProgress[stageKey] as { status: string; completedAt?: string; data?: Record<string, unknown> };
+      stageData.status = status;
       if (status === "completed") {
-        stageProgress[stageKey].completedAt = new Date().toISOString();
+        stageData.completedAt = new Date().toISOString();
       }
       if (data) {
-        stageProgress[stageKey].data = { ...stageProgress[stageKey].data, ...data };
+        stageData.data = { ...stageData.data, ...data };
       }
       
       // Unlock next stage if current is completed
@@ -414,15 +414,13 @@ export const localDb: LocalDb = {
       dialogue_timing: s.dialogue_timing || null,
       dialogue_tone: s.dialogue_tone || null,
       voice_type: s.voice_type || null,
-      // 2.7 音效设计 (带时机)
+      // 2.7 音效设计
       ambient_sound: s.ambient_sound || null,
-      ambient_sound_timing: s.ambient_sound_timing || null,
       action_sound: s.action_sound || null,
-      action_sound_timing: s.action_sound_timing || null,
       special_sound: s.special_sound || null,
-      special_sound_timing: s.special_sound_timing || null,
       music: s.music || null,
-      music_timing: s.music_timing || null,
+      music_mood: s.music_mood || null,
+      sound_timing: s.sound_timing || null,
       // 2.8 特效/后期
       vfx: s.vfx || null,
       color_grading: s.color_grading || null,

@@ -164,7 +164,6 @@ export interface SceneDescription {
   prompt_text?: string;
   performance?: string;
   performance_rhythm?: string;
-  dialogue_tone?: string;
   
   // 内部使用
   _wordCountWarning?: number;

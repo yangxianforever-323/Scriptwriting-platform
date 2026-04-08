@@ -68,15 +68,13 @@ export async function createScenes(
     dialogue_timing?: string;
     dialogue_tone?: string;
     voice_type?: string;
-    // 2.7 音效设计 (带时机)
+    // 2.7 音效设计
     ambient_sound?: string;
-    ambient_sound_timing?: string;
     action_sound?: string;
-    action_sound_timing?: string;
     special_sound?: string;
-    special_sound_timing?: string;
     music?: string;
-    music_timing?: string;
+    music_mood?: string;
+    sound_timing?: string;
     // 2.8 特效/后期
     vfx?: string;
     color_grading?: string;

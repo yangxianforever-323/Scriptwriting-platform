@@ -400,8 +400,8 @@ export function SceneDescriptionCard({
                     <div className="flex gap-2 items-center">
                       <span className="text-xs text-stone-400 dark:text-stone-500 w-12 shrink-0">环境:</span>
                       <span className="text-xs text-stone-600 dark:text-stone-300">{scene.ambient_sound}</span>
-                      {scene.ambient_sound_timing && (
-                        <span className="text-xs bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded">{scene.ambient_sound_timing}</span>
+                      {scene.sound_timing && (
+                        <span className="text-xs bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded">{scene.sound_timing}</span>
                       )}
                     </div>
                   )}
@@ -409,26 +409,20 @@ export function SceneDescriptionCard({
                     <div className="flex gap-2 items-center">
                       <span className="text-xs text-stone-400 dark:text-stone-500 w-12 shrink-0">动作:</span>
                       <span className="text-xs text-stone-600 dark:text-stone-300">{scene.action_sound}</span>
-                      {scene.action_sound_timing && (
-                        <span className="text-xs bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded">{scene.action_sound_timing}</span>
-                      )}
                     </div>
                   )}
                   {scene.special_sound && (
                     <div className="flex gap-2 items-center">
                       <span className="text-xs text-stone-400 dark:text-stone-500 w-12 shrink-0">特效:</span>
                       <span className="text-xs text-stone-600 dark:text-stone-300">{scene.special_sound}</span>
-                      {scene.special_sound_timing && (
-                        <span className="text-xs bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded">{scene.special_sound_timing}</span>
-                      )}
                     </div>
                   )}
                   {scene.music && (
                     <div className="flex gap-2 items-center">
                       <span className="text-xs text-stone-400 dark:text-stone-500 w-12 shrink-0">音乐:</span>
                       <span className="text-xs text-stone-600 dark:text-stone-300">{scene.music}</span>
-                      {scene.music_timing && (
-                        <span className="text-xs bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded">{scene.music_timing}</span>
+                      {scene.music_mood && (
+                        <span className="text-xs bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400 px-1.5 py-0.5 rounded">{scene.music_mood}</span>
                       )}
                     </div>
                   )}

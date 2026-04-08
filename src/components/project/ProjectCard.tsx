@@ -4,17 +4,24 @@ import type { ProjectWithPreview } from "@/lib/db/projects-list";
 import type { project_stage } from "@/types/database";
 
 /**
- * Stage display configuration
+ * Stage display configuration - New stage system
  */
 const stageConfig: Record<
-  project_stage,
+  string,
   { label: string; className: string }
 > = {
+  // Old stages (for backward compatibility)
   draft: { label: "草稿", className: "bg-zinc-100 text-zinc-600" },
   scenes: { label: "分镜", className: "bg-blue-100 text-blue-700" },
   images: { label: "图片", className: "bg-purple-100 text-purple-700" },
   videos: { label: "视频", className: "bg-orange-100 text-orange-700" },
   completed: { label: "完成", className: "bg-green-100 text-green-700" },
+  // New stages
+  planning: { label: "规划中", className: "bg-zinc-100 text-zinc-600" },
+  story: { label: "故事开发", className: "bg-blue-100 text-blue-700" },
+  storyboard: { label: "分镜设计", className: "bg-purple-100 text-purple-700" },
+  production: { label: "素材创作", className: "bg-orange-100 text-orange-700" },
+  complete: { label: "已完成", className: "bg-green-100 text-green-700" },
 };
 
 /**
@@ -41,7 +48,9 @@ interface ProjectCardProps {
  * Project card component for displaying in the project list.
  */
 export function ProjectCard({ project }: ProjectCardProps) {
-  const stage = stageConfig[project.stage];
+  // Use current_stage if available, fallback to stage
+  const stageKey = (project as { current_stage?: string }).current_stage || project.stage;
+  const stage = stageConfig[stageKey] || { label: "未知", className: "bg-gray-100 text-gray-600" };
   const styleName = project.style
     ? styleNames[project.style] ?? project.style
     : null;
