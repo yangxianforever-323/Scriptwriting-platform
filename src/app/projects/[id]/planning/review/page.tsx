@@ -1,0 +1,1239 @@
+"use client";
+
+import { useEffect, useState, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { StageNavigator } from "@/components/project/StageNavigator";
+import { Spinner } from "@/components/ui/Spinner";
+import type { Project } from "@/types/database";
+import {
+  CharacterGeneratePanel,
+  LocationGeneratePanel,
+  SceneGeneratePanel,
+} from "./components/GeneratePanels";
+
+interface AnalysisCharacter {
+  id: string;
+  name: string;
+  description: string;
+  role: string;
+  appearance: string;
+  personality?: string;
+  background?: string;
+  thumbnailUrl?: string;
+}
+
+interface AnalysisLocation {
+  id: string;
+  name: string;
+  description: string;
+  atmosphere?: string;
+  thumbnailUrl?: string;
+}
+
+interface PropItem {
+  name: string;
+  type: "weapon" | "item" | "tool" | "accessory" | "other";
+  description: string;
+  holder?: string;
+}
+
+interface VisualEffect {
+  style: string;
+  colorTone: string;
+  lighting: string;
+  cameraAngle?: string;
+}
+
+interface AnalysisScene {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  locationId?: string;
+  characters: string[];
+  characterIds?: string[];
+  timeOfDay?: string;
+  mood?: string;
+  thumbnailUrl?: string;
+  visualEffect?: VisualEffect;
+  props?: PropItem[];
+  atmosphereRef?: string;
+  notes?: string;
+}
+
+interface AnalysisAct {
+  id: string;
+  title: string;
+  description: string;
+  scenes: AnalysisScene[];
+}
+
+interface AnalysisData {
+  title: string;
+  logline: string;
+  synopsis: string;
+  genre: string;
+  targetDuration: number;
+  tone?: string;
+  resolution?: string;
+  colorPalette?: string[];
+  visualStyle?: string;
+  presetStyle?: string;
+  characters: AnalysisCharacter[];
+  locations: AnalysisLocation[];
+  acts: AnalysisAct[];
+}
+
+function ThumbnailPlaceholder({ 
+  label, 
+  imageUrl,
+  onUpload,
+  onClick,
+  size = "medium"
+}: { 
+  label: string; 
+  imageUrl?: string;
+  onUpload?: (file: File) => void;
+  onClick?: () => void;
+  size?: "small" | "medium" | "large";
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  const sizeClasses = {
+    small: "w-16 h-20",
+    medium: "w-24 h-32",
+    large: "w-36 h-48"
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpload) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onUpload(file);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div className="relative group">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      <button
+        onClick={() => {
+          if (onClick) {
+            onClick();
+          } else {
+            inputRef.current?.click();
+          }
+        }}
+        className={`${sizeClasses[size]} rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex flex-col items-center justify-center overflow-hidden transition-all hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 cursor-pointer bg-zinc-100 dark:bg-zinc-800`}
+      >
+        {imageUrl ? (
+          <img src={imageUrl} alt={label} className="w-full h-full object-cover" />
+        ) : (
+          <>
+            <svg className="w-6 h-6 text-zinc-400 dark:text-zinc-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500 text-center px-1">{label}</span>
+          </>
+        )}
+      </button>
+      {imageUrl && !onClick && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            inputRef.current?.click();
+          }}
+          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+        >
+          ×
+        </button>
+      )}
+      {imageUrl && onClick && (
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center pointer-events-none">
+          <span className="text-[10px] text-white bg-black/60 px-2 py-1 rounded">点击编辑</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ReviewAnalysisPage() {
+  const params = useParams();
+  const router = useRouter();
+  const projectId = params.id as string;
+
+  const [project, setProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "characters" | "locations" | "acts">("overview");
+  const [optimizing, setOptimizing] = useState<string | null>(null);
+
+  // Generate Panel States
+  const [characterPanelIdx, setCharacterPanelIdx] = useState<number | null>(null);
+  const [locationPanelIdx, setLocationPanelIdx] = useState<number | null>(null);
+  const [scenePanelActIdx, setScenePanelActIdx] = useState<number | null>(null);
+  const [scenePanelSceneIdx, setScenePanelSceneIdx] = useState<number | null>(null);
+
+  const [analysisData, setAnalysisData] = useState<AnalysisData>({
+    title: "",
+    logline: "",
+    synopsis: "",
+    genre: "",
+    targetDuration: 60,
+    tone: "写实电影感",
+    resolution: "1920x1080",
+    colorPalette: ["#1a1a2e", "#16213e", "#0f3460", "#e94560"],
+    visualStyle: "",
+    presetStyle: "写实电影感",
+    characters: [],
+    locations: [],
+    acts: [],
+  });
+
+  useEffect(() => {
+    fetchProject();
+  }, [projectId]);
+
+  const fetchProject = async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}`);
+      if (!response.ok) throw new Error("Failed to fetch project");
+      const data = await response.json();
+      setProject(data.project);
+
+      if (data.project.stage_progress?.planning?.data) {
+        const pd = data.project.stage_progress.planning.data;
+        setAnalysisData(prev => ({
+          ...prev,
+          title: pd.title || prev.title || data.project.title || "",
+          logline: pd.logline || prev.logline || "",
+          synopsis: pd.synopsis || prev.synopsis || "",
+          genre: pd.genre || prev.genre || "",
+          targetDuration: pd.targetDuration || prev.targetDuration || 60,
+        }));
+      }
+
+      const storedAnalysis = sessionStorage.getItem(`analysis_${projectId}`);
+      if (storedAnalysis) {
+        try {
+          const parsed = JSON.parse(storedAnalysis);
+          setAnalysisData(prev => ({
+            ...prev,
+            ...parsed,
+            characters: parsed.characters || [],
+            locations: parsed.locations || [],
+            acts: parsed.acts || [],
+          }));
+        } catch {}
+      }
+    } catch (error) {
+      console.error("Error fetching project:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAIoptimize = async (field: string, index?: number) => {
+    setOptimizing(`${field}-${index || 0}`);
+
+    try {
+      let contentToOptimize = "";
+
+      switch (field) {
+        case "logline":
+          contentToOptimize = analysisData.logline;
+          break;
+        case "synopsis":
+          contentToOptimize = analysisData.synopsis;
+          break;
+        case "character":
+          if (index !== undefined && analysisData.characters[index]) {
+            contentToOptimize = JSON.stringify(analysisData.characters[index]);
+          }
+          break;
+        case "scene":
+          if (index !== undefined) {
+            for (const act of analysisData.acts) {
+              const scene = act.scenes.find((s, i) => i === index);
+              if (scene) {
+                contentToOptimize = JSON.stringify(scene);
+                break;
+              }
+            }
+          }
+          break;
+      }
+
+      if (!contentToOptimize) return;
+
+      const response = await fetch("/api/ai/optimize-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          field,
+          content: contentToOptimize,
+          context: {
+            title: analysisData.title,
+            genre: analysisData.genre,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        switch (field) {
+          case "logline":
+            setAnalysisData(prev => ({ ...prev, logline: result.optimized }));
+            break;
+          case "synopsis":
+            setAnalysisData(prev => ({ ...prev, synopsis: result.optimized }));
+            break;
+          case "character":
+            if (index !== undefined) {
+              setAnalysisData(prev => {
+                const newChars = [...prev.characters];
+                newChars[index] = { ...newChars[index], ...result.optimized };
+                return { ...prev, characters: newChars };
+              });
+            }
+            break;
+          case "scene":
+            if (index !== undefined) {
+              setAnalysisData(prev => {
+                const newActs = [...prev.acts];
+                let sceneFound = false;
+                for (let i = 0; i < newActs.length && !sceneFound; i++) {
+                  for (let j = 0; j < newActs[i].scenes.length; j++) {
+                    if (j === index) {
+                      newActs[i].scenes[j] = { ...newActs[i].scenes[j], ...result.optimized };
+                      sceneFound = true;
+                      break;
+                    }
+                  }
+                }
+                return { ...prev, acts: newActs };
+              });
+            }
+            break;
+        }
+      }
+    } catch (error) {
+      console.error("Error optimizing:", error);
+      alert("优化失败，请重试");
+    } finally {
+      setOptimizing(null);
+    }
+  };
+
+  const handleApplyAndContinue = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/apply-analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(analysisData),
+      });
+
+      if (!response.ok) throw new Error("Failed to apply");
+
+      sessionStorage.removeItem(`analysis_${projectId}`);
+
+      router.push(`/projects/${projectId}/story`);
+    } catch (error) {
+      console.error("Error applying:", error);
+      alert("保存失败，请重试");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCharacterImageUpload = (idx: number, file: File | null) => {
+    if (!file) {
+      updateCharacter(idx, { thumbnailUrl: undefined });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    updateCharacter(idx, { thumbnailUrl: url });
+  };
+
+  const handleLocationImageUpload = (idx: number, file: File | null) => {
+    if (!file) {
+      updateLocation(idx, { thumbnailUrl: undefined });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    updateLocation(idx, { thumbnailUrl: url });
+  };
+
+  const handleSceneImageUpload = (actIdx: number, sceneIdx: number, file: File | null) => {
+    if (!file) {
+      updateScene(actIdx, sceneIdx, { thumbnailUrl: undefined });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    updateScene(actIdx, sceneIdx, { thumbnailUrl: url });
+  };
+
+  const updateCharacter = (index: number, updates: Partial<AnalysisCharacter>) => {
+    setAnalysisData(prev => {
+      const newCharacters = [...prev.characters];
+      newCharacters[index] = { ...newCharacters[index], ...updates };
+      return { ...prev, characters: newCharacters };
+    });
+  };
+
+  const addCharacter = () => {
+    setAnalysisData(prev => ({
+      ...prev,
+      characters: [
+        ...prev.characters,
+        {
+          id: `char_${Date.now()}`,
+          name: "新角色",
+          description: "",
+          role: "supporting",
+          appearance: "",
+        },
+      ],
+    }));
+  };
+
+  const removeCharacter = (index: number) => {
+    setAnalysisData(prev => ({
+      ...prev,
+      characters: prev.characters.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateLocation = (index: number, updates: Partial<AnalysisLocation>) => {
+    setAnalysisData(prev => {
+      const newLocations = [...prev.locations];
+      newLocations[index] = { ...newLocations[index], ...updates };
+      return { ...prev, locations: newLocations };
+    });
+  };
+
+  const addLocation = () => {
+    setAnalysisData(prev => ({
+      ...prev,
+      locations: [
+        ...prev.locations,
+        {
+          id: `loc_${Date.now()}`,
+          name: "新地点",
+          description: "",
+        },
+      ],
+    }));
+  };
+
+  const removeLocation = (index: number) => {
+    setAnalysisData(prev => ({
+      ...prev,
+      locations: prev.locations.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateAct = (actIndex: number, updates: Partial<AnalysisAct>) => {
+    setAnalysisData(prev => {
+      const newActs = [...prev.acts];
+      newActs[actIndex] = { ...newActs[actIndex], ...updates };
+      return { ...prev, acts: newActs };
+    });
+  };
+
+  const updateScene = (actIndex: number, sceneIndex: number, updates: Partial<AnalysisScene>) => {
+    setAnalysisData(prev => {
+      const newActs = [...prev.acts];
+      const newScenes = [...newActs[actIndex].scenes];
+      newScenes[sceneIndex] = { ...newScenes[sceneIndex], ...updates };
+      newActs[actIndex] = { ...newActs[actIndex], scenes: newScenes };
+      return { ...prev, acts: newActs };
+    });
+  };
+
+  const addAct = () => {
+    setAnalysisData(prev => ({
+      ...prev,
+      acts: [
+        ...prev.acts,
+        {
+          id: `act_${Date.now()}`,
+          title: `第${prev.acts.length + 1}幕`,
+          description: "",
+          scenes: [],
+        },
+      ],
+    }));
+  };
+
+  const addScene = (actIndex: number) => {
+    setAnalysisData(prev => {
+      const newActs = [...prev.acts];
+      newActs[actIndex] = {
+        ...newActs[actIndex],
+        scenes: [
+          ...newActs[actIndex].scenes,
+          {
+            id: `scene_${Date.now()}`,
+            title: `新场景`,
+            description: "",
+            location: "",
+            characters: [],
+          },
+        ],
+      };
+      return { ...prev, acts: newActs };
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      <StageNavigator project={project!} currentStage="planning" />
+
+      <div className="max-w-[1400px] mx-auto px-6 py-8">
+        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+          {/* Header */}
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+              确认分析结果
+            </h1>
+            <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+              请检查并编辑 AI 分析的内容，确认无误后进入故事开发
+            </p>
+          </div>
+
+          {/* Tabs */}
+          <div className="px-6 pt-4">
+            <div className="flex gap-6 border-b border-zinc-200 dark:border-zinc-700">
+              {[
+                { key: "overview", label: "概览" },
+                { key: "characters", label: `角色 (${analysisData.characters.length})` },
+                { key: "locations", label: `地点 (${analysisData.locations.length})` },
+                { key: "acts", label: `分幕 (${analysisData.acts.length})` },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key as typeof activeTab)}
+                  className={`pb-3 text-sm font-medium transition-colors ${
+                    activeTab === tab.key
+                      ? "text-blue-600 border-b-2 border-blue-600"
+                      : "text-zinc-500 hover:text-zinc-700"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-6">
+            {/* Overview Tab */}
+            {activeTab === "overview" && (
+              <div className="space-y-6 max-w-3xl">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">项目标题</label>
+                  <input
+                    type="text"
+                    value={analysisData.title}
+                    onChange={(e) => setAnalysisData(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">一句话概括</label>
+                    <button
+                      onClick={() => handleAIoptimize("logline")}
+                      disabled={optimizing !== null}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      {optimizing === "logline-0" ? <Spinner size="sm" /> : (
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      )}
+                      AI优化
+                    </button>
+                  </div>
+                  <textarea
+                    value={analysisData.logline}
+                    onChange={(e) => setAnalysisData(prev => ({ ...prev, logline: e.target.value }))}
+                    rows={3}
+                    className="w-full px-4 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">详细概要</label>
+                    <button
+                      onClick={() => handleAIoptimize("synopsis")}
+                      disabled={optimizing !== null}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      {optimizing === "synopsis-0" ? <Spinner size="sm" /> : (
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      )}
+                      AI优化
+                    </button>
+                  </div>
+                  <textarea
+                    value={analysisData.synopsis}
+                    onChange={(e) => setAnalysisData(prev => ({ ...prev, synopsis: e.target.value }))}
+                    rows={5}
+                    className="w-full px-4 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">题材类型</label>
+                    <input
+                      type="text"
+                      value={analysisData.genre}
+                      onChange={(e) => setAnalysisData(prev => ({ ...prev, genre: e.target.value }))}
+                      placeholder="如：都市、玄幻、悬疑..."
+                      className="w-full px-4 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">预估时长（分钟）</label>
+                    <input
+                      type="number"
+                      value={analysisData.targetDuration}
+                      onChange={(e) => setAnalysisData(prev => ({ ...prev, targetDuration: parseInt(e.target.value) || 60 }))}
+                      className="w-full px-4 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analysisData.acts.length}</div>
+                    <div className="text-xs text-zinc-500">幕</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analysisData.characters.length}</div>
+                    <div className="text-xs text-zinc-500">角色</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{analysisData.locations.length}</div>
+                    <div className="text-xs text-zinc-500">地点</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+                      {analysisData.acts.reduce((acc, act) => acc + act.scenes.length, 0)}
+                    </div>
+                    <div className="text-xs text-zinc-500">场景</div>
+                  </div>
+                </div>
+
+                {/* ===== 项目设定面板 ===== */}
+                <div className="border-t border-zinc-200 dark:border-zinc-700 pt-6 mt-6">
+                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mb-1 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    项目设定
+                  </h3>
+                  <p className="text-xs text-zinc-500 mb-5">定义影片的视觉风格、分辨率和配色方案，影响后续AI生成效果</p>
+
+                  <div className="space-y-5">
+
+                    {/* Row 1: Resolution + Genre + Duration + Tone */}
+                    <div className="grid grid-cols-4 gap-4">
+                      {/* Resolution */}
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">输出分辨率</label>
+                        <select
+                          value={analysisData.resolution || "1920x1080"}
+                          onChange={(e) => setAnalysisData(prev => ({ ...prev, resolution: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="1920x1080">1920×1080 (FHD)</option>
+                          <option value="2560x1440">2560×1440 (2K)</option>
+                          <option value="3840x2160">3840×2160 (4K)</option>
+                          <option value="1080x1920">1080×1920 (竖屏FHD)</option>
+                          <option value="1080x1080">1080×1080 (方形)</option>
+                          <option value="1280x720">1280×720 (HD)</option>
+                          <option value="2048x1152">2048×1152 (2K Cinema)</option>
+                        </select>
+                      </div>
+
+                      {/* Genre / Script Type */}
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">剧本类型</label>
+                        <select
+                          value={analysisData.genre}
+                          onChange={(e) => setAnalysisData(prev => ({ ...prev, genre: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">选择类型...</option>
+                          <option value="玄幻">玄幻</option>
+                          <option value="武侠">武侠</option>
+                          <option value="都市">都市</option>
+                          <option value="科幻">科幻</option>
+                          <option value="悬疑">悬疑</option>
+                          <option value="历史">历史</option>
+                          <option value="爱情">爱情</option>
+                          <option value="恐怖">恐怖</option>
+                          <option value="喜剧">喜剧</option>
+                          <option value="战争">战争</option>
+                          <option value="动画">动画</option>
+                          <option value="纪录片">纪录片</option>
+                        </select>
+                      </div>
+
+                      {/* Duration */}
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">预估时长（分钟）</label>
+                        <input
+                          type="number"
+                          value={analysisData.targetDuration}
+                          onChange={(e) => setAnalysisData(prev => ({ ...prev, targetDuration: parseInt(e.target.value) || 60 }))}
+                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      {/* Tone */}
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">整体基调</label>
+                        <select
+                          value={analysisData.tone || ""}
+                          onChange={(e) => setAnalysisData(prev => ({ ...prev, tone: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">选择基调...</option>
+                          <option value="写实电影感">写实电影感</option>
+                          <option value="热血激昂">热血激昂</option>
+                          <option value="暗黑压抑">暗黑压抑</option>
+                          <option value="温馨治愈">温馨治愈</option>
+                          <option value="史诗壮阔">史诗壮阔</option>
+                          <option value="悬疑紧张">悬疑紧张</option>
+                          <option value="浪漫唯美">浪漫唯美</option>
+                          <option value="幽默轻松">幽默轻松</option>
+                          <option value="赛博朋克">赛博朋克</option>
+                          <option value="水墨国风">水墨国风</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Color Palette */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">影片配色色板</label>
+                        <span className="text-[10px] text-zinc-400">{analysisData.colorPalette?.length || 4} 色</span>
+                      </div>
+                      <div className="flex items-center gap-2 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                        {(analysisData.colorPalette || ["#1a1a2e", "#16213e", "#0f3460", "#e94560"]).map((color, i) => (
+                          <div key={`palette-${i}`} className="relative group">
+                            <input
+                              type="color"
+                              value={color}
+                              onChange={(e) => {
+                                const newPalette = [...(analysisData.colorPalette || [])];
+                                newPalette[i] = e.target.value;
+                                setAnalysisData(prev => ({ ...prev, colorPalette: newPalette }));
+                              }}
+                              className="w-11 h-11 rounded-lg cursor-pointer border-2 border-zinc-300 dark:border-zinc-600 hover:border-blue-500 transition-colors"
+                            />
+                            <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">{color}</span>
+                          </div>
+                        ))}
+                        {(analysisData.colorPalette || []).length < 8 && (
+                          <button
+                            onClick={() => {
+                              const current = analysisData.colorPalette || [];
+                              setAnalysisData(prev => ({
+                                ...prev,
+                                colorPalette: [...current, "#888888"],
+                              }));
+                            }}
+                            className="w-11 h-11 rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex items-center justify-center text-zinc-400 hover:border-blue-500 hover:text-blue-500 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                          </button>
+                        )}
+                        <div className="ml-auto flex items-center gap-2">
+                          {/* Preset Palettes */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-zinc-500 mr-1">预设:</span>
+                            {[{ name: "暗夜", colors: ["#0f0f23", "#1a1a2e", "#16213e", "#e94560"] }, { name: "暖阳", colors: ["#ff6b35", "#f7931e", "#ffd700", "#fff8dc"] }, { name: "森林", colors: ["#1b4332", "#2d6a4f", "#40916c", "#95d5b2"] }, { name: "海洋", colors: ["#03045e", "#0077b6", "#00b4d8", "#90e0ef"] }, { name: "复古", colors: ["#264653", "#2a9d8f", "#e9c46a", "#f4a261"] },].map(preset => (
+                              <button
+                                key={preset.name}
+                                onClick={() => setAnalysisData(prev => ({ ...prev, colorPalette: preset.colors }))}
+                                className="flex -space-x-1"
+                                title={preset.name}
+                              >
+                                {preset.colors.map((c, ci) => (
+                                  <div key={`${preset.name}-${ci}`} className="w-4 h-4 rounded-full border border-white dark:border-zinc-800" style={{ backgroundColor: c }} />
+                                ))}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Custom Style Input */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">自定义风格描述</label>
+                      <textarea
+                        value={analysisData.visualStyle || ""}
+                        onChange={(e) => setAnalysisData(prev => ({ ...prev, visualStyle: e.target.value }))}
+                        placeholder="描述你想要的视觉风格，如：日式动漫赛博朋克风格，霓虹灯光与高对比度暗色调..."
+                        rows={2}
+                        className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 resize-none"
+                      />
+                    </div>
+
+                    {/* Preset Styles Grid */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">预设视觉风格</label>
+                        <span className="text-[10px] text-zinc-400">当前：{analysisData.presetStyle || "未选"}</span>
+                      </div>
+                      <div className="grid grid-cols-6 gap-2">
+                        {[
+                          { key: "写实电影感", label: "写实电影", color: "from-slate-600 to-slate-800", desc: "Cinematic Realism" },
+                          { key: "动漫渲染", label: "动漫渲染", color: "from-pink-500 to-violet-500", desc: "Anime Render" },
+                          { key: "水墨国风", label: "水墨国风", color: "from-stone-600 to-stone-900", desc: "Ink Wash" },
+                          { key: "赛博朋克", label: "赛博朋克", color: "from-cyan-500 to-fuchsia-600", desc: "Cyberpunk" },
+                          { key: "暗黑哥特", label: "暗黑哥特", color: "from-gray-900 to-red-950", desc: "Dark Gothic" },
+                          { key: "温暖治愈", label: "温暖治愈", color: "from-orange-300 to-amber-400", desc: "Warm Healing" },
+                          { key: "冷峻科幻", label: "冷峻科幻", color: "from-blue-900 to-cyan-800", desc: "Cold Sci-Fi" },
+                          { key: "复古胶片", label: "复古胶片", color: "from-amber-700 to-yellow-900", desc: "Film Vintage" },
+                          { key: "油画质感", label: "油画质感", color: "from-indigo-800 to-purple-900", desc: "Oil Painting" },
+                          { key: "3D卡通", label: "3D卡通", color: "from-emerald-500 to-teal-600", desc: "3D Toon" },
+                          { key: "像素风", label: "像素风", color: "from-green-700 to-lime-600", desc: "Pixel Art" },
+                          { key: "水彩风", label: "水彩风", color: "from-sky-300 to-blue-400", desc: "Watercolor" },
+                        ].map(style => (
+                          <button
+                            key={style.key}
+                            onClick={() => setAnalysisData(prev => ({ ...prev, presetStyle: style.key, visualStyle: style.desc }))}
+                            className={`relative group rounded-lg overflow-hidden border-2 transition-all ${
+                              analysisData.presetStyle === style.key
+                                ? "border-blue-500 ring-2 ring-blue-500/20"
+                                : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500"
+                            }`}
+                          >
+                            <div className={`bg-gradient-to-br ${style.color} h-14 flex items-center justify-center`}>
+                              <span className="text-[10px] font-medium text-white drop-shadow-md">{style.label}</span>
+                            </div>
+                            {analysisData.presetStyle === style.key && (
+                              <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Style Preview Bar */}
+                    {(analysisData.presetStyle || analysisData.visualStyle || analysisData.colorPalette) && (
+                      <div className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-gradient-to-r from-zinc-50 to-zinc-100 dark:from-zinc-800/80 dark:to-zinc-800/40">
+                        <div className="text-[10px] text-zinc-500 mb-1.5">当前设定预览</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {analysisData.resolution && (
+                            <span className="px-2 py-0.5 text-[10px] rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                              📐 {analysisData.resolution}
+                            </span>
+                          )}
+                          {analysisData.genre && (
+                            <span className="px-2 py-0.5 text-[10px] rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                              🎬 {analysisData.genre}
+                            </span>
+                          )}
+                          {analysisData.tone && (
+                            <span className="px-2 py-0.5 text-[10px] rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                              ✨ {analysisData.tone}
+                            </span>
+                          )}
+                          {analysisData.presetStyle && (
+                            <span className="px-2 py-0.5 text-[10px] rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                              🎨 {analysisData.presetStyle}
+                            </span>
+                          )}
+                          {(analysisData.colorPalette || []).slice(0, 6).map((color, i) => (
+                            <div key={`preview-${i}`} className="w-4 h-4 rounded-full border border-zinc-300 dark:border-zinc-600" style={{ backgroundColor: color }} title={color} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Characters Tab */}
+            {activeTab === "characters" && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-medium text-zinc-900 dark:text-zinc-100">角色列表</h3>
+                  <button
+                    onClick={addCharacter}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    添加角色
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {analysisData.characters.map((char, idx) => (
+                    <div key={char.id || idx} className="p-5 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                      <div className="flex gap-5">
+                        {/* Thumbnail */}
+                        <ThumbnailPlaceholder
+                          label="角色图"
+                          imageUrl={char.thumbnailUrl}
+                          onUpload={(f) => handleCharacterImageUpload(idx, f)}
+                          onClick={() => setCharacterPanelIdx(idx)}
+                          size="medium"
+                        />
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 grid grid-cols-3 gap-3">
+                              <input
+                                type="text"
+                                value={char.name}
+                                onChange={(e) => updateCharacter(idx, { name: e.target.value })}
+                                placeholder="角色名称"
+                                className="px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                              />
+                              <select
+                                value={char.role}
+                                onChange={(e) => updateCharacter(idx, { role: e.target.value })}
+                                className="px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                              >
+                                <option value="protagonist">主角</option>
+                                <option value="antagonist">反派</option>
+                                <option value="supporting">配角</option>
+                                <option value="minor">龙套</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={char.appearance}
+                                onChange={(e) => updateCharacter(idx, { appearance: e.target.value })}
+                                placeholder="外貌特征"
+                                className="px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                              />
+                            </div>
+                            <button
+                              onClick={() => removeCharacter(idx)}
+                              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded shrink-0 mt-1"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
+
+                          <textarea
+                            value={char.description}
+                            onChange={(e) => updateCharacter(idx, { description: e.target.value })}
+                            placeholder="角色描述"
+                            rows={3}
+                            className="w-full px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 resize-none"
+                          />
+
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => handleAIoptimize("character", idx)}
+                              disabled={optimizing !== null}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                            >
+                              {optimizing === `character-${idx}` ? <Spinner size="sm" /> : (
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                              )}
+                              AI优化描述
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {analysisData.characters.length === 0 && (
+                  <div className="text-center py-12 text-zinc-400">
+                    <p>暂无角色，点击上方按钮添加</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Locations Tab */}
+            {activeTab === "locations" && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-medium text-zinc-900 dark:text-zinc-100">场景地点</h3>
+                  <button
+                    onClick={addLocation}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    添加地点
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {analysisData.locations.map((loc, idx) => (
+                    <div key={loc.id || idx} className="p-5 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                      <div className="flex gap-5">
+                        {/* Thumbnail */}
+                        <ThumbnailPlaceholder
+                          label="场景图"
+                          imageUrl={loc.thumbnailUrl}
+                          onUpload={(f) => handleLocationImageUpload(idx, f)}
+                          onClick={() => setLocationPanelIdx(idx)}
+                          size="large"
+                        />
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                value={loc.name}
+                                onChange={(e) => updateLocation(idx, { name: e.target.value })}
+                                placeholder="地点名称"
+                                className="w-full px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                              />
+                              <textarea
+                                value={loc.description}
+                                onChange={(e) => updateLocation(idx, { description: e.target.value })}
+                                placeholder="地点描述"
+                                rows={3}
+                                className="w-full mt-2 px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 resize-none"
+                              />
+                            </div>
+                            <button
+                              onClick={() => removeLocation(idx)}
+                              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded shrink-0 mt-1"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {analysisData.locations.length === 0 && (
+                  <div className="text-center py-12 text-zinc-400">
+                    <p>暂无地点，点击上方按钮添加</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Acts Tab */}
+            {activeTab === "acts" && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-medium text-zinc-900 dark:text-zinc-100">分幕结构</h3>
+                  <button
+                    onClick={addAct}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    添加一幕
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {analysisData.acts.map((act, actIdx) => (
+                    <div key={act.id || actIdx} className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                      {/* Act Header */}
+                      <div className="p-4 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-between">
+                        <input
+                          type="text"
+                          value={act.title}
+                          onChange={(e) => updateAct(actIdx, { title: e.target.value })}
+                          className="flex-1 px-3 py-1.5 text-base font-medium bg-transparent border-none text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                        />
+                        <span className="text-sm text-zinc-500 ml-4">{act.scenes.length} 场景</span>
+                      </div>
+
+                      {/* Act Description */}
+                      <div className="px-4 pb-3">
+                        <textarea
+                          value={act.description}
+                          onChange={(e) => updateAct(actIdx, { description: e.target.value })}
+                          placeholder="幕描述"
+                          rows={2}
+                          className="w-full px-3 py-2 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 resize-none"
+                        />
+                      </div>
+
+                      {/* Scenes */}
+                      <div className="px-4 pb-4 space-y-4">
+                        {act.scenes.map((scene, sceneIdx) => (
+                          <div key={scene.id || sceneIdx} className="p-4 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            <div className="flex gap-4">
+                              {/* Scene Thumbnail */}
+                              <ThumbnailPlaceholder
+                                label="场景图"
+                                imageUrl={scene.thumbnailUrl}
+                                onUpload={(f) => handleSceneImageUpload(actIdx, sceneIdx, f)}
+                                onClick={() => { setScenePanelActIdx(actIdx); setScenePanelSceneIdx(sceneIdx); }}
+                                size="small"
+                              />
+
+                              {/* Scene Content */}
+                              <div className="flex-1 min-w-0 space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <input
+                                    type="text"
+                                    value={scene.title}
+                                    onChange={(e) => updateScene(actIdx, sceneIdx, { title: e.target.value })}
+                                    placeholder="场景标题"
+                                    className="flex-1 px-2 py-1 text-sm font-medium bg-transparent border-none text-zinc-900 dark:text-zinc-100 focus:outline-none rounded"
+                                  />
+                                  <select
+                                    value={scene.location}
+                                    onChange={(e) => updateScene(actIdx, sceneIdx, { location: e.target.value })}
+                                    className="px-2 py-1 text-xs rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 shrink-0"
+                                  >
+                                    <option value="">选择地点</option>
+                                    {analysisData.locations.map(loc => (
+                                      <option key={loc.id || loc.name} value={loc.name}>{loc.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <textarea
+                                  value={scene.description}
+                                  onChange={(e) => updateScene(actIdx, sceneIdx, { description: e.target.value })}
+                                  placeholder="场景描述"
+                                  rows={2}
+                                  className="w-full px-2 py-1.5 text-xs rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 resize-none"
+                                />
+
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-zinc-400">
+                                    角色: {scene.characters.join(", ") || "无"}
+                                  </span>
+                                  <button
+                                    onClick={() => handleAIoptimize("scene", sceneIdx)}
+                                    disabled={optimizing !== null}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded hover:bg-blue-100 disabled:opacity-50"
+                                  >
+                                    {optimizing === `scene-${sceneIdx}` ? <Spinner size="sm" /> : "AI优化"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        <button
+                          onClick={() => addScene(actIdx)}
+                          className="w-full py-2 text-sm text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded border border-dashed border-zinc-300 dark:border-zinc-600"
+                        >
+                          + 添加场景
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {analysisData.acts.length === 0 && (
+                  <div className="text-center py-12 text-zinc-400">
+                    <p>暂无分幕结构，点击上方按钮添加</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-between">
+            <button
+              onClick={() => router.push(`/projects/${projectId}/planning`)}
+              className="px-5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm"
+            >
+              返回上一步
+            </button>
+            <button
+              onClick={handleApplyAndContinue}
+              disabled={saving}
+              className="px-6 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2 text-sm font-medium"
+            >
+              {saving ? (
+                <>
+                  <Spinner size="sm" />
+                  保存中...
+                </>
+              ) : (
+                <>
+                  确认并进入故事开发
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Generate Panels */}
+        {characterPanelIdx !== null && (
+          <CharacterGeneratePanel
+            character={analysisData.characters[characterPanelIdx]}
+            isOpen={characterPanelIdx !== null}
+            onClose={() => setCharacterPanelIdx(null)}
+            onUpdate={(updates) => {
+              updateCharacter(characterPanelIdx, updates);
+            }}
+          />
+        )}
+
+        {locationPanelIdx !== null && (
+          <LocationGeneratePanel
+            location={analysisData.locations[locationPanelIdx]}
+            isOpen={locationPanelIdx !== null}
+            onClose={() => setLocationPanelIdx(null)}
+            onUpdate={(updates) => {
+              updateLocation(locationPanelIdx, updates);
+            }}
+          />
+        )}
+
+        {scenePanelActIdx !== null && scenePanelSceneIdx !== null && (
+          <SceneGeneratePanel
+            scene={analysisData.acts[scenePanelActIdx].scenes[scenePanelSceneIdx]}
+            actTitle={analysisData.acts[scenePanelActIdx]?.title}
+            actCharacters={analysisData.characters}
+            actLocations={analysisData.locations}
+            isOpen={true}
+            onClose={() => { setScenePanelActIdx(null); setScenePanelSceneIdx(null); }}
+            onUpdate={(updates) => {
+              updateScene(scenePanelActIdx, scenePanelSceneIdx, updates);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

@@ -48,6 +48,7 @@ export default function PlanningPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"manual" | "novel" | "ai">("manual");
+  const [error, setError] = useState<string | null>(null);
 
   const [logline, setLogline] = useState("");
   const [synopsis, setSynopsis] = useState("");
@@ -81,6 +82,7 @@ export default function PlanningPage() {
 
   const handleSave = async () => {
     setSaving(true);
+    setError(null);
     try {
       const response = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
@@ -113,9 +115,11 @@ export default function PlanningPage() {
         }),
       });
 
+      await new Promise(resolve => setTimeout(resolve, 300));
       router.push(`/projects/${projectId}/story`);
     } catch (error) {
       console.error("Error saving:", error);
+      setError("保存失败，请重试");
     } finally {
       setSaving(false);
     }
@@ -127,9 +131,11 @@ export default function PlanningPage() {
     setGenre(result.genre);
     setTargetDuration(result.targetDuration);
 
-    setSaving(true);
     try {
-      await fetch(`/api/projects/${projectId}`, {
+      console.log("Saving analysis data to session...");
+      sessionStorage.setItem(`analysis_${projectId}`, JSON.stringify(result));
+
+      const response = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -150,6 +156,8 @@ export default function PlanningPage() {
         }),
       });
 
+      if (!response.ok) throw new Error("Failed to save project");
+
       await fetch(`/api/projects/${projectId}/stage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,24 +167,11 @@ export default function PlanningPage() {
         }),
       });
 
-      const applyResponse = await fetch(`/api/projects/${projectId}/apply-analysis`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result),
-      });
-
-      if (!applyResponse.ok) {
-        console.error("Failed to apply analysis");
-      } else {
-        const applyResult = await applyResponse.json();
-        console.log("Analysis applied:", applyResult);
-      }
-
-      router.push(`/projects/${projectId}/story`);
+      console.log("Navigating to review page...");
+      router.push(`/projects/${projectId}/planning/review`);
     } catch (error) {
-      console.error("Error saving:", error);
-    } finally {
-      setSaving(false);
+      console.error("Error:", error);
+      setError(error instanceof Error ? error.message : "保存失败，请重试");
     }
   };
 
@@ -211,6 +206,18 @@ export default function PlanningPage() {
               选择您喜欢的方式开始创作
             </p>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              </div>
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="px-6 pt-4">

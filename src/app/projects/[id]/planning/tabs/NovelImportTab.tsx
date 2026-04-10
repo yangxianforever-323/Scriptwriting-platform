@@ -40,21 +40,45 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
   const [novelContent, setNovelContent] = useState("");
   const [novelTitle, setNovelTitle] = useState("");
   const [analysisResult, setAnalysisResult] = useState<NovelAnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const text = await file.text();
-    setNovelContent(text);
-    setNovelTitle(file.name.replace(/\.[^/.]+$/, ""));
+    setError(null);
+    const fileName = file.name.toLowerCase();
+
+    try {
+      let text = "";
+
+      if (fileName.endsWith(".txt") || fileName.endsWith(".md")) {
+        text = await file.text();
+      } else if (fileName.endsWith(".docx")) {
+        setError("抱歉，目前暂不支持 .docx 格式，请先将文档另存为 .txt 格式后再上传");
+        return;
+      } else if (fileName.endsWith(".pdf")) {
+        setError("抱歉，目前暂不支持 .pdf 格式，请先将文档复制/转换为文本内容后再上传");
+        return;
+      } else {
+        setError(`不支持的文件格式: ${file.name}，请使用 .txt 或 .md 格式`);
+        return;
+      }
+
+      setNovelContent(text);
+      setNovelTitle(file.name.replace(/\.[^/.]+$/, ""));
+    } catch (err) {
+      console.error("Error reading file:", err);
+      setError("读取文件失败，请重试");
+    }
   };
 
   const handleAnalyze = async () => {
     if (!novelContent.trim()) return;
 
     setStep("analyzing");
+    setError(null);
 
     try {
       const response = await fetch("/api/ai/analyze-novel", {
@@ -66,10 +90,13 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
         }),
       });
 
-      if (!response.ok) throw new Error("分析失败");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "分析失败");
+      }
 
       const result = await response.json();
-      
+
       const analysis: NovelAnalysisResult = {
         title: novelTitle || result.title || "未命名项目",
         logline: result.logline || result.synopsis?.substring(0, 100) || "",
@@ -85,14 +112,15 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
       setStep("review");
     } catch (error) {
       console.error("Error analyzing novel:", error);
+      setError(error instanceof Error ? error.message : "分析失败，请重试");
       setStep("upload");
-      alert("分析失败，请重试");
     }
   };
 
   const handleApply = () => {
     if (analysisResult) {
       onAnalysisComplete(analysisResult);
+      handleReset();
     }
   };
 
@@ -101,6 +129,7 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
     setNovelContent("");
     setNovelTitle("");
     setAnalysisResult(null);
+    setError(null);
   };
 
   return (
@@ -134,7 +163,8 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">点击上传或拖拽文件</p>
-                <p className="text-xs text-zinc-400">支持 .txt, .md 格式</p>
+                <p className="text-xs text-zinc-400 mb-2">支持 .txt, .md 格式</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">.docx / .pdf 请先转为文本</p>
               </div>
             </div>
 
@@ -156,6 +186,18 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
               />
             </div>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              </div>
+            </div>
+          )}
 
           {/* Preview & Title */}
           {novelContent && (
