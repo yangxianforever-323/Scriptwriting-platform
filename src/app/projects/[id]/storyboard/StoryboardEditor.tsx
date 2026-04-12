@@ -75,6 +75,7 @@ export function StoryboardEditor({ storyboard, shots, story, onUpdate }: Storybo
             onSelectShot={handleShotSelect}
             onShotDoubleClick={handleShotDoubleClick}
             onUpdateShots={handleShotsUpdate}
+            storyboardId={storyboard.id}
           />
         </div>
 

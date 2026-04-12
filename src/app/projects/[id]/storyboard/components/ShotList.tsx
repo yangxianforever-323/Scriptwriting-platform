@@ -13,6 +13,7 @@ interface ShotListProps {
   onSelectShot: (shot: Shot) => void;
   onShotDoubleClick?: (shot: Shot) => void;
   onUpdateShots: (shots: Shot[]) => void;
+  storyboardId?: string;
 }
 
 export function ShotList({
@@ -23,6 +24,7 @@ export function ShotList({
   onSelectShot,
   onShotDoubleClick,
   onUpdateShots,
+  storyboardId,
 }: ShotListProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -62,43 +64,31 @@ export function ShotList({
   };
 
   const handleGenerateFromStory = async () => {
-    if (!story || !shots[0]?.storyboardId) return;
+    if (!story || !storyboardId) return;
 
     setIsGenerating(true);
     try {
-      const storyboardId = shots[0].storyboardId;
-      const newShots: Shot[] = [];
-
-      story.acts.forEach((act) => {
-        act.scenes.forEach((scene, sceneIndex) => {
-          const location = story.locations.find(
-            (l) => l.id === scene.locationId
-          );
-          const characters = story.characters.filter((c) =>
-            scene.characterIds.includes(c.id)
-          );
-          const sceneProps = story.props.filter((p) =>
-            scene.propIds?.includes(p.id)
-          );
-
-          const shot = shotDb.create(storyboardId, {
-            title: scene.title || `场景 ${sceneIndex + 1}`,
-            description: scene.description,
-            storySceneId: scene.id,
-            actId: act.id,
-            locationId: scene.locationId,
-            characterIds: scene.characterIds,
-            propIds: scene.propIds || [],
-            duration: 6,
-            shotType: "MS",
-            shotTypeName: "中景",
-          });
-
-          newShots.push(shot);
-        });
+      const response = await fetch("/api/ai/generate-storyboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyId: story.id,
+          storyboardId: storyboardId,
+          options: {
+            shotsPerScene: 3,
+            includeDialogue: true,
+          },
+        }),
       });
 
-      onUpdateShots([...shots, ...newShots]);
+      if (!response.ok) throw new Error("生成失败");
+
+      const result = await response.json();
+      const allShots = shotDb.getByStoryboardId(storyboardId);
+      onUpdateShots(allShots);
+    } catch (error) {
+      console.error("Error generating from story:", error);
+      alert("生成失败，请重试");
     } finally {
       setIsGenerating(false);
     }
