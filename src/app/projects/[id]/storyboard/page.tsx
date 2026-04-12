@@ -34,7 +34,25 @@ export default function StoryboardPage() {
       const data = await response.json();
       setProject(data.project);
 
-      const storyData = storyDb.getByProjectId(projectId);
+      // 使用API获取story数据（因为数据存储在服务端文件系统）
+      let storyData = null;
+      try {
+        const storyResponse = await fetch(`/api/projects/${projectId}/story-data`);
+        if (storyResponse.ok) {
+          const storyResult = await storyResponse.json();
+          if (storyResult.story) {
+            storyData = storyResult.story;
+            // 补充characters, locations, props
+            if (storyResult.characters) storyData.characters = storyResult.characters;
+            if (storyResult.locations) storyData.locations = storyResult.locations;
+            if (storyResult.props) storyData.props = storyResult.props;
+            if (storyResult.acts) storyData.acts = storyResult.acts;
+          }
+        }
+      } catch (e) {
+        console.log("Story data not available from API");
+      }
+      
       setStory(storyData);
 
       let activeBoard = storyboardDb.getActiveByProjectId(projectId);

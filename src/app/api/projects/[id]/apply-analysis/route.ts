@@ -1,10 +1,18 @@
 /**
  * POST /api/projects/[id]/apply-analysis
  * Applies the novel analysis to story - creates characters, locations, acts, scenes, props
+ * Uses dataStore (file system) instead of localStorage for server-side compatibility
  */
 
 import { NextResponse } from "next/server";
-import { storyDb, actDb, storySceneDb, characterDb, locationDb, propDb } from "@/lib/db/story";
+import {
+  storyStore,
+  actStore,
+  storySceneStore,
+  characterStore,
+  locationStore,
+  propStore,
+} from "@/lib/data-store";
 
 interface AnalysisCharacter {
   name: string;
@@ -62,9 +70,9 @@ export async function POST(
   const { id: projectId } = await params;
   const analysis: AnalysisResult = await request.json();
 
-  let story = storyDb.getByProjectId(projectId);
+  let story = storyStore.getByProjectId(projectId);
   if (!story) {
-    story = storyDb.create(projectId, {
+    story = storyStore.create(projectId, {
       title: analysis.title || "",
       logline: analysis.logline || "",
       synopsis: analysis.synopsis || "",
@@ -80,7 +88,7 @@ export async function POST(
 
   try {
     for (const char of analysis.characters || []) {
-      const newChar = characterDb.create(projectId, {
+      const newChar = characterStore.create(projectId, {
         name: char.name,
         appearance: char.appearance || char.description || "",
         personality: char.personality || "",
@@ -91,7 +99,7 @@ export async function POST(
     }
 
     for (const loc of analysis.locations || []) {
-      const newLoc = locationDb.create(projectId, {
+      const newLoc = locationStore.create(projectId, {
         name: loc.name,
         description: loc.description,
         atmosphere: loc.atmosphere || "",
@@ -101,7 +109,7 @@ export async function POST(
 
     if (analysis.props && analysis.props.length > 0) {
       for (const prop of analysis.props) {
-        const newProp = propDb.create(projectId, {
+        const newProp = propStore.create(projectId, {
           name: prop.name,
           description: prop.description,
           importance: mapPropImportance(prop.importance),
@@ -111,11 +119,11 @@ export async function POST(
     }
 
     for (const actData of analysis.acts || []) {
-      const newAct = actDb.create(story.id, {
+      const newAct = actStore.create(story.id, {
         title: actData.title,
         description: actData.description,
       });
-      createdActs.push({ id: newAct.id, title: newAct.title });
+      createdActs.push({ id: newAct.id, title: actData.title });
 
       for (const sceneData of actData.scenes || []) {
         const location = createdLocations.find(
@@ -130,7 +138,7 @@ export async function POST(
           .filter((p) => sceneData.props?.includes(p.name))
           .map((p) => p.id);
 
-        storySceneDb.create(newAct.id, {
+        storySceneStore.create(newAct.id, {
           title: sceneData.title,
           description: sceneData.description,
           locationId: location?.id,
@@ -142,7 +150,7 @@ export async function POST(
       }
     }
 
-    storyDb.update(story.id, {
+    storyStore.update(story.id, {
       title: analysis.title || story.title,
       logline: analysis.logline || story.logline,
       synopsis: analysis.synopsis || story.synopsis,
