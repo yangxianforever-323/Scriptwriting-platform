@@ -102,6 +102,14 @@ export const storyDb = {
     setLocalData(STORIES_KEY, filtered);
     return true;
   },
+
+  deleteByProjectId(projectId: string): boolean {
+    const stories = getLocalData<Story>(STORIES_KEY);
+    const filtered = stories.filter((s) => s.projectId !== projectId);
+    if (filtered.length === stories.length) return false;
+    setLocalData(STORIES_KEY, filtered);
+    return true;
+  },
 };
 
 // Act operations
