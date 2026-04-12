@@ -4,10 +4,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { isDeepSeekConfigured, callVolcAPI } from "@/lib/ai/deepseek";
 
-const DOUCIBASE_API_KEY = process.env.DOUCIBASE_API_KEY;
-const DOUCIBASE_BASE_URL = process.env.DOUCIBASE_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3/responses";
-const DOUCIBASE_MODEL = process.env.DOUCIBASE_MODEL || "ep-20260301183547-bbw2x";
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v3-2-251201";
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +16,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
     }
 
-    if (!DOUCIBASE_API_KEY) {
+    if (!isDeepSeekConfigured()) {
       return NextResponse.json({ optimized: content });
     }
 
@@ -71,38 +70,21 @@ export async function POST(request: Request) {
 
     const inputs = [
       {
-        role: "system",
-        content: [{ type: "input_text", text: systemPrompt }],
+        role: "system" as const,
+        content: [{ type: "input_text" as const, text: systemPrompt }],
       },
       {
-        role: "user",
-        content: [{ type: "input_text", text: userPrompt }],
+        role: "user" as const,
+        content: [{ type: "input_text" as const, text: userPrompt }],
       },
     ];
 
-    const response = await fetch(DOUCIBASE_BASE_URL!, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${DOUCIBASE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: DOUCIBASE_MODEL,
-        stream: false,
-        input: inputs,
-      }),
-    });
+    const response = await callVolcAPI(inputs, { stream: false });
 
-    if (!response.ok) {
-      console.error("Doubao API error for optimization:", response.status);
-      return NextResponse.json({ optimized: content });
-    }
-
-    const data = await response.json();
     let aiResponse = "";
 
-    if (data.output && Array.isArray(data.output) && data.output.length > 0) {
-      const firstOutput = data.output[0];
+    if (response.output && Array.isArray(response.output) && response.output.length > 0) {
+      const firstOutput = response.output[0];
       if (firstOutput.content && Array.isArray(firstOutput.content)) {
         const textContent = firstOutput.content.find((c: any) => c.type === "output_text");
         if (textContent && textContent.text) {

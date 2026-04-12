@@ -81,8 +81,7 @@ export async function POST(
     for (const char of analysis.characters || []) {
       const newChar = characterDb.create(projectId, {
         name: char.name,
-        description: char.description,
-        appearance: char.appearance || "",
+        appearance: char.appearance || char.description || "",
         personality: char.personality || "",
         background: char.background || "",
         role: mapCharacterRole(char.role),

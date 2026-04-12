@@ -119,15 +119,15 @@ export function generateImagePrompt(
     }
   });
 
-  if (shot.timeOfDay) {
-    const timeOption = TIME_OF_DAY_OPTIONS.find(t => t.value === shot.timeOfDay);
+  if ((shot as any).timeOfDay) {
+    const timeOption = TIME_OF_DAY_OPTIONS.find(t => t.value === (shot as any).timeOfDay);
     if (timeOption) {
       parts.push(timeOption.label);
     }
   }
 
-  if (shot.mood) {
-    const moodOption = MOOD_OPTIONS.find(m => m.value === shot.mood);
+  if ((shot as any).mood) {
+    const moodOption = MOOD_OPTIONS.find(m => m.value === (shot as any).mood);
     if (moodOption) {
       parts.push(moodOption.label);
     }

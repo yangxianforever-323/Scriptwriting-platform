@@ -132,9 +132,10 @@ export default function PlanningPage() {
     setTargetDuration(result.targetDuration);
 
     try {
-      console.log("Saving analysis data to session...");
+      console.log("Saving analysis data...");
       sessionStorage.setItem(`analysis_${projectId}`, JSON.stringify(result));
 
+      // 1. Save project basic info
       const response = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -158,6 +159,27 @@ export default function PlanningPage() {
 
       if (!response.ok) throw new Error("Failed to save project");
 
+      // 2. Save story data (characters, locations, acts) to persistent storage
+      if (result.characters?.length || result.locations?.length || result.acts?.length) {
+        await fetch(`/api/projects/${projectId}/story-data`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: result.title,
+            logline: result.logline,
+            synopsis: result.synopsis,
+            genre: result.genre,
+            targetDuration: result.targetDuration,
+            characters: result.characters,
+            locations: result.locations,
+            acts: result.acts,
+            stage: "planning",
+            status: "completed",
+          }),
+        });
+      }
+
+      // 3. Update stage status
       await fetch(`/api/projects/${projectId}/stage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,7 +189,7 @@ export default function PlanningPage() {
         }),
       });
 
-      console.log("Navigating to review page...");
+      console.log("All data saved successfully, navigating to review page...");
       router.push(`/projects/${projectId}/planning/review`);
     } catch (error) {
       console.error("Error:", error);
@@ -221,7 +243,10 @@ export default function PlanningPage() {
 
           {/* Tabs */}
           <div className="px-6 pt-4">
-            <PlanningTabs activeTab={activeTab} onTabChange={setActiveTab} />
+            <PlanningTabs
+              activeTab={activeTab}
+              onTabChange={(tabId) => setActiveTab(tabId as "manual" | "novel" | "ai")}
+            />
           </div>
 
           {/* Tab Content */}

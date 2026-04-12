@@ -596,3 +596,5 @@ ${styleGuidance}
   const result = parseScenesJson(content, finalShotCount);
   return result.scenes;
 }
+
+export { callVolcAPI };

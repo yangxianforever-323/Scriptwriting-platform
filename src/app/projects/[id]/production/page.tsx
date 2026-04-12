@@ -77,7 +77,7 @@ export default function ProductionPage() {
     });
   };
 
-  const handleBatchGenerateImages = async (options: BatchGenerateOptions) => {
+  const handleBatchGenerateImages = async (options?: { style?: string }) => {
     const targets = selectedShotIds.size > 0
       ? shots.filter((s) => selectedShotIds.has(s.id))
       : shots.filter((s) => s.imageStatus !== "completed");
@@ -90,7 +90,7 @@ export default function ProductionPage() {
         type: "image" as const,
         status: "pending" as const,
         prompt: shot.imagePrompt || "",
-        title: shot.title,
+        title: shot.title || `分镜 ${shot.index + 1}`,
         createdAt: Date.now(),
       }));
 
@@ -106,7 +106,7 @@ export default function ProductionPage() {
     }
   };
 
-  const handleBatchGenerateVideos = async (options: BatchGenerateOptions) => {
+  const handleBatchGenerateVideos = async (options?: {}) => {
     const targets = selectedShotIds.size > 0
       ? shots.filter((s) => selectedShotIds.has(s.id))
       : shots.filter(
@@ -123,7 +123,7 @@ export default function ProductionPage() {
         type: "video" as const,
         status: "pending" as const,
         prompt: shot.videoPrompt || "",
-        title: shot.title,
+        title: shot.title || `分镜 ${shot.index + 1}`,
         createdAt: Date.now(),
       }));
 
@@ -149,7 +149,7 @@ export default function ProductionPage() {
       type: "image",
       status: "pending",
       prompt: shot.imagePrompt,
-      title: shot.title,
+      title: shot.title || `分镜 ${shot.index + 1}`,
       createdAt: Date.now(),
     };
 
@@ -167,7 +167,7 @@ export default function ProductionPage() {
       type: "video",
       status: "pending",
       prompt: shot.videoPrompt,
-      title: shot.title,
+      title: shot.title || `分镜 ${shot.index + 1}`,
       createdAt: Date.now(),
     };
 
@@ -327,8 +327,6 @@ export interface GenerationTask {
 
 export interface BatchGenerateOptions {
   style?: string;
-  quality?: "standard" | "high";
-  concurrent?: number;
 }
 
 async function processTask(

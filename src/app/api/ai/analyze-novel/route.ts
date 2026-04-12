@@ -1,78 +1,20 @@
 /**
  * AI Novel Analysis API
  * POST /api/ai/analyze-novel - Analyze a novel and break it down into story elements
- * Uses Doubao model via Volcano Engine
+ * Uses DeepSeek model via Volcano Engine
  */
 
 import { NextResponse } from "next/server";
+import { DeepSeekApiError, callVolcAPI, isDeepSeekConfigured } from "@/lib/ai/deepseek";
 
-const DOUCIBASE_API_KEY = process.env.DOUCIBASE_API_KEY;
-const DOUCIBASE_BASE_URL = process.env.DOUCIBASE_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3/responses";
-const DOUCIBASE_MODEL = process.env.DOUCIBASE_MODEL || "doubao-pro-32k";
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v3-2-251201";
 
-async function callDoubaoAPI(inputs: any[]): Promise<any> {
-  if (!DOUCIBASE_API_KEY) {
-    throw new Error("DOUCIBASE_API_KEY is not configured");
+async function analyzeNovelWithDeepSeek(content: string, title?: string): Promise<any> {
+  if (!isDeepSeekConfigured()) {
+    throw new DeepSeekApiError("VOLC_API_KEY is not configured");
   }
 
-  const requestBody = {
-    model: DOUCIBASE_MODEL,
-    stream: false,
-    input: inputs,
-  };
-
-  console.log("Doubao API request URL:", DOUCIBASE_BASE_URL);
-  console.log("Model:", DOUCIBASE_MODEL);
-
-  const response = await fetch(DOUCIBASE_BASE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${DOUCIBASE_API_KEY}`,
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error("Doubao API error:", errorData);
-    throw new Error(`API error: ${response.status}`);
-  }
-
-  return response.json();
-}
-
-function extractTextFromResponse(response: any): string {
-  if (response.output && Array.isArray(response.output) && response.output.length > 0) {
-    const firstOutput = response.output[0];
-    if (firstOutput.content && Array.isArray(firstOutput.content) && firstOutput.content.length > 0) {
-      const textContent = firstOutput.content.find((c: any) => c.type === "output_text");
-      if (textContent && textContent.text) {
-        return textContent.text;
-      }
-    }
-  }
-  return "";
-}
-
-export async function POST(request: Request) {
-  try {
-    const { content, title } = await request.json();
-
-    if (!content || typeof content !== "string") {
-      return NextResponse.json(
-        { error: "Novel content is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!DOUCIBASE_API_KEY) {
-      console.warn("Doubao API key not configured, using mock analysis");
-      const mockAnalysis = generateMockAnalysis(content, title);
-      return NextResponse.json(mockAnalysis);
-    }
-
-    const systemPrompt = `你是一个专业的小说分析助手。请分析用户提供的小说内容，并将其拆解为结构化的剧本元素。
+  const systemPrompt = `你是一个专业的小说分析助手。请分析用户提供的小说内容，并将其拆解为结构化的剧本元素。
 
 请分析并返回以下JSON格式的数据：
 
@@ -117,60 +59,95 @@ export async function POST(request: Request) {
 - 根据小说长度合理分幕，通常3-5幕
 - characters数组中最多包含5-8个主要角色`;
 
-    const userPrompt = `请分析以下小说内容（标题：${title || "未命名"}）：
+  const userPrompt = `请分析以下小说内容（标题：${title || "未命名"}）：
 
 ${content.substring(0, 20000)}
 
 请直接返回JSON格式的分析结果，不要包含其他文字。`;
 
-    const inputs = [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: systemPrompt }],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: userPrompt }],
-      },
-    ];
+  const inputs = [
+    {
+      role: "system" as const,
+      content: [{ type: "input_text" as const, text: systemPrompt }],
+    },
+    {
+      role: "user" as const,
+      content: [{ type: "input_text" as const, text: userPrompt }],
+    },
+  ];
 
-    let response = await callDoubaoAPI(inputs);
-    let aiResponse = extractTextFromResponse(response);
+  const response = await callVolcAPI(inputs, { stream: false });
+  let aiResponse = "";
 
-    // If empty response, try alternative parsing
-    if (!aiResponse && response.output?.choices) {
-      aiResponse = response.output.choices[0]?.message?.content || "";
-    }
-
-    if (!aiResponse) {
-      throw new Error("Empty response from AI");
-    }
-
-    console.log("AI Response length:", aiResponse.length);
-
-    // Parse JSON from response
-    let result;
-    try {
-      result = JSON.parse(aiResponse);
-    } catch {
-      const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        try {
-          result = JSON.parse(jsonMatch[1]);
-        } catch {
-          throw new Error("Failed to parse JSON from markdown");
-        }
-      } else {
-        throw new Error("Failed to parse AI response as JSON");
+  if (response.output && Array.isArray(response.output) && response.output.length > 0) {
+    const firstOutput = response.output[0];
+    if (firstOutput.content && Array.isArray(firstOutput.content) && firstOutput.content.length > 0) {
+      const textContent = firstOutput.content.find((c: any) => c.type === "output_text");
+      if (textContent && textContent.text) {
+        aiResponse = textContent.text;
       }
     }
+  }
 
-    result.title = title || result.title || "未命名项目";
-    if (!result.acts) result.acts = [];
-    if (!result.characters) result.characters = [];
-    if (!result.locations) result.locations = [];
+  if (!aiResponse && (response as any).output?.choices) {
+    aiResponse = (response as any).output.choices[0]?.message?.content || "";
+  }
 
-    return NextResponse.json(result);
+  if (!aiResponse) {
+    throw new DeepSeekApiError("Empty response from AI");
+  }
+
+  console.log("AI Response length:", aiResponse.length);
+
+  let result;
+  try {
+    result = JSON.parse(aiResponse);
+  } catch {
+    const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      try {
+        result = JSON.parse(jsonMatch[1]);
+      } catch {
+        throw new DeepSeekApiError("Failed to parse JSON from markdown");
+      }
+    } else {
+      throw new DeepSeekApiError("Failed to parse AI response as JSON");
+    }
+  }
+
+  result.title = title || result.title || "未命名项目";
+  if (!result.acts) result.acts = [];
+  if (!result.characters) result.characters = [];
+  if (!result.locations) result.locations = [];
+
+  return result;
+}
+
+export async function POST(request: Request) {
+  try {
+    const { content, title } = await request.json();
+
+    if (!content || typeof content !== "string") {
+      return NextResponse.json(
+        { error: "Novel content is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!isDeepSeekConfigured()) {
+      console.warn("VOLC_API_KEY not configured, using mock analysis");
+      const mockAnalysis = generateMockAnalysis(content, title);
+      return NextResponse.json(mockAnalysis);
+    }
+
+    try {
+      const result = await analyzeNovelWithDeepSeek(content, title);
+      return NextResponse.json(result);
+    } catch (error) {
+      console.warn("DeepSeek API failed, falling back to mock analysis:", error);
+      const mockAnalysis = generateMockAnalysis(content, title);
+      return NextResponse.json(mockAnalysis);
+    }
   } catch (error) {
     console.error("Error analyzing novel:", error);
 
