@@ -2,12 +2,55 @@ import { NextResponse } from "next/server";
 import { actDb, storySceneDb, characterDb, locationDb, propDb } from "@/lib/db/story";
 import { shotDb, storyboardDb } from "@/lib/db/storyboard";
 
+interface SceneData {
+  id: string;
+  title: string;
+  description: string;
+  characterIds?: string[];
+  locationId?: string;
+  propIds?: string[];
+}
+
+interface CharacterData {
+  id: string;
+  name: string;
+  appearance?: string;
+}
+
+interface LocationData {
+  id: string;
+  name: string;
+  description: string;
+  atmosphere?: string;
+}
+
+interface PropData {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface ActData {
+  id: string;
+  title: string;
+}
+
+interface ShotConfig {
+  shotType: string;
+  cameraMovement: string;
+  composition: string;
+  lighting: string;
+  cameraAngle: string;
+  depthOfField: string;
+  duration: number;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const storyId = body.storyId;
-    const storyboardId = body.storyboardId;
-    
+    const storyId = body.storyId as string;
+    const storyboardId = body.storyboardId as string;
+
     const storyboard = storyboardDb.getById(storyboardId);
     if (!storyboard) {
       return NextResponse.json({ error: "Storyboard not found" }, { status: 404 });
@@ -30,13 +73,19 @@ export async function POST(request: Request) {
       const scenes = storySceneDb.getByActId(act.id);
 
       for (const scene of scenes) {
-        const sceneCharacters = characters.filter(function(c) { return scene.characterIds && scene.characterIds.includes(c.id); });
-        const loc = locations.find(function(l) { return l.id === scene.locationId; }) || null;
-        const sceneProps = props.filter(function(p) { return scene.propIds && scene.propIds.includes(p.id); });
+        const sceneCharacters = characters.filter(function(c: CharacterData): boolean {
+          return scene.characterIds && scene.characterIds.includes(c.id);
+        });
+        const loc = locations.find(function(l: LocationData): boolean {
+          return l.id === scene.locationId;
+        }) || null;
+        const sceneProps = props.filter(function(p: PropData): boolean {
+          return scene.propIds && scene.propIds.includes(p.id);
+        });
 
         const shots = generateShotsForScene(scene, sceneCharacters, loc, sceneProps, act, shotsPerScene);
 
-        shots.forEach(function(shotData, index) {
+        shots.forEach(function(shotData: any, index: number) {
           const createdShot = shotDb.create(storyboardId, Object.assign({}, shotData, {
             index: generatedShots.length + index,
             storySceneId: scene.id,
@@ -60,43 +109,50 @@ export async function POST(request: Request) {
   }
 }
 
-function generateShotsForScene(scene, characters, location, sceneProps, act, shotsPerScene) {
-  var shots = [];
-  var characterNames = characters.map(function(c) { return c.name; }).join(",");
-  var locationDesc = location ? (location.name + " - " + location.description) : scene.description;
-  var propIds = sceneProps.map(function(p) { return p.id; });
+function generateShotsForScene(
+  scene: SceneData,
+  characters: CharacterData[],
+  location: LocationData | null,
+  sceneProps: PropData[],
+  act: ActData,
+  shotsPerScene: number
+): Record<string, unknown>[] {
+  const shots: Record<string, unknown>[] = [];
+  const characterNames = characters.map(function(c: CharacterData): string { return c.name; }).join(",");
+  const locationDesc = location ? (location.name + " - " + location.description) : scene.description;
+  const propIds = sceneProps.map(function(p: PropData): string { return p.id; });
 
-  var sequence = [
+  const sequence: ShotConfig[] = [
     { shotType: "LS", cameraMovement: "static", composition: "rule_of_thirds", lighting: "natural", cameraAngle: "eye_level", depthOfField: "deep", duration: 4 },
     { shotType: "MS", cameraMovement: "push", composition: "rule_of_thirds", lighting: "natural", cameraAngle: "eye_level", depthOfField: "shallow", duration: 6 },
     { shotType: "CU", cameraMovement: "static", composition: "center", lighting: "dramatic", cameraAngle: "eye_level", depthOfField: "shallow", duration: 3 },
   ];
 
-  var shotTitles = [
+  const shotTitles = [
     scene.title + " - 建立镜头",
     scene.title + " - 角色镜头",
     scene.title + " - 特写镜头",
   ];
 
-  for (var i = 0; i < Math.min(sequence.length, shotsPerScene); i++) {
-    var config = sequence[i];
-    var shotType = config.shotType || "MS";
-    var isEstablishing = shotType === "LS" || shotType === "ELS";
-    var isCloseUp = shotType === "CU" || shotType === "ECU";
+  for (let i = 0; i < Math.min(sequence.length, shotsPerScene); i++) {
+    const config = sequence[i];
+    const shotType = config.shotType || "MS";
+    const isEstablishing = shotType === "LS" || shotType === "ELS";
+    const isCloseUp = shotType === "CU" || shotType === "ECU";
 
-    var shotCharacterIds = isEstablishing
+    const shotCharacterIds: string[] = isEstablishing
       ? []
       : isCloseUp && characters.length > 0
         ? [characters[0].id]
-        : characters.map(function(c) { return c.id; });
+        : characters.map(function(c: CharacterData): string { return c.id; });
 
-    var shotPropIds = isEstablishing
+    const shotPropIds: string[] = isEstablishing
       ? []
       : isCloseUp && propIds.length > 0
         ? [propIds[0]]
         : propIds;
 
-    var imagePrompt = buildImagePrompt(scene.description, characters, sceneProps, location, isCloseUp);
+    const imagePrompt = buildImagePrompt(scene.description, characters, sceneProps, location, isCloseUp);
 
     shots.push({
       title: shotTitles[i] || (scene.title + " - 镜头" + (i + 1)),
@@ -134,8 +190,14 @@ function generateShotsForScene(scene, characters, location, sceneProps, act, sho
   return shots;
 }
 
-function buildImagePrompt(basePrompt, characters, props, location, focusOnCharacter) {
-  var parts = [basePrompt];
+function buildImagePrompt(
+  basePrompt: string,
+  characters: CharacterData[],
+  props: PropData[],
+  location: LocationData | null,
+  focusOnCharacter: boolean
+): string {
+  const parts: string[] = [basePrompt];
 
   if (location) {
     parts.push(location.name);
@@ -146,11 +208,11 @@ function buildImagePrompt(basePrompt, characters, props, location, focusOnCharac
 
   if (characters.length > 0) {
     if (focusOnCharacter && characters[0]) {
-      var char = characters[0];
+      const char = characters[0];
       parts.push(char.name);
       if (char.appearance) parts.push(char.appearance);
     } else {
-      characters.forEach(function(char) {
+      characters.forEach(function(char: CharacterData): void {
         parts.push(char.name);
         if (char.appearance) parts.push(char.appearance);
       });
@@ -158,7 +220,7 @@ function buildImagePrompt(basePrompt, characters, props, location, focusOnCharac
   }
 
   if (props.length > 0) {
-    props.forEach(function(prop) {
+    props.forEach(function(prop: PropData): void {
       parts.push(prop.name);
       if (prop.description) parts.push(prop.description);
     });
@@ -167,44 +229,44 @@ function buildImagePrompt(basePrompt, characters, props, location, focusOnCharac
   return parts.filter(Boolean).join(", ");
 }
 
-function getShotTypeName(shotType) {
-  var names = {
+function getShotTypeName(shotType: string): string {
+  const names: Record<string, string> = {
     EWS: "极远景", LS: "远景", FS: "全景", MS: "中景", MCU: "中近景", CU: "特写", ECU: "极特写"
   };
   return names[shotType] || "中景";
 }
 
-function getCameraMovementName(movement) {
-  var names = {
+function getCameraMovementName(movement: string): string {
+  const names: Record<string, string> = {
     static: "固定镜头", push: "推进", pull: "拉远", track: "跟随", pan: "摇摄",
     tilt: "俯仰", orbit: "环绕", crane_up: "上摇", crane_down: "下摇"
   };
   return names[movement] || "固定镜头";
 }
 
-function getCameraAngleName(angle) {
-  var names = {
+function getCameraAngleName(angle: string): string {
+  const names: Record<string, string> = {
     eye_level: "平视", high_angle: "俯视", low_angle: "仰视", dutch_angle: "荷兰角"
   };
   return names[angle] || "平视";
 }
 
-function getCompositionName(composition) {
-  var names = {
+function getCompositionName(composition: string): string {
+  const names: Record<string, string> = {
     rule_of_thirds: "三分法", center: "居中", symmetry: "对称", leading_lines: "引导线"
   };
   return names[composition] || "三分法";
 }
 
-function getLightingName(lighting) {
-  var names = {
+function getLightingName(lighting: string): string {
+  const names: Record<string, string> = {
     natural: "自然光", dramatic: "戏剧光", soft: "柔和光", golden_hour: "黄金时刻"
   };
   return names[lighting] || "自然光";
 }
 
-function getDepthOfFieldName(dof) {
-  var names = {
+function getDepthOfFieldName(dof: string): string {
+  const names: Record<string, string> = {
     shallow: "浅景深", deep: "深景深", medium: "中等景深"
   };
   return names[dof] || "浅景深";
