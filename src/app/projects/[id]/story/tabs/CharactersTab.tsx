@@ -350,6 +350,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
               />
             </div>
           </div>
+          ) : null}
 
           {dialogTab === "ai-generate" && (
             <AIGenerateImage
