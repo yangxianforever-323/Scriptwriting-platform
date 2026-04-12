@@ -185,6 +185,7 @@ export const shotDb = {
       actId: shotData.actId,
       characterIds: shotData.characterIds || [],
       locationId: shotData.locationId,
+      propIds: shotData.propIds || [],
       imagePrompt: shotData.imagePrompt,
       imageUrl: shotData.imageUrl,
       imageStatus: (shotData.imageStatus as ShotImageStatus) || "pending",

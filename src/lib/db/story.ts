@@ -185,6 +185,7 @@ export const storySceneDb = {
       description: sceneData.description || "",
       locationId: sceneData.locationId,
       characterIds: sceneData.characterIds || [],
+      propIds: sceneData.propIds || [],
       timeOfDay: sceneData.timeOfDay || "",
       weather: sceneData.weather || "",
       mood: sceneData.mood || "",

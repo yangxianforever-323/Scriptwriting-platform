@@ -37,6 +37,7 @@ export interface Shot {
   actId?: string;
   characterIds: string[];
   locationId?: string;
+  propIds: string[];
   
   // Image generation
   imagePrompt?: string;

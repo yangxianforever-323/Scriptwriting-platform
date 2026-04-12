@@ -26,6 +26,7 @@ interface AnalysisScene {
   description: string;
   location: string;
   characters: string[];
+  props?: string[];
   timeOfDay?: string;
   mood?: string;
 }
@@ -125,11 +126,16 @@ export async function POST(
           .filter((c) => sceneData.characters?.includes(c.name))
           .map((c) => c.id);
 
+        const propIds = createdProps
+          .filter((p) => sceneData.props?.includes(p.name))
+          .map((p) => p.id);
+
         storySceneDb.create(newAct.id, {
           title: sceneData.title,
           description: sceneData.description,
           locationId: location?.id,
           characterIds: characterIds,
+          propIds: propIds,
           timeOfDay: sceneData.timeOfDay || "",
           mood: sceneData.mood || "",
         });

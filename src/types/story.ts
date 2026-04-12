@@ -47,6 +47,7 @@ export interface StoryScene {
   description: string;
   locationId?: string;
   characterIds: string[];
+  propIds: string[];
   timeOfDay: string;
   weather: string;
   mood: string;

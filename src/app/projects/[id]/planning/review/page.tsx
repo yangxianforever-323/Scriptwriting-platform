@@ -345,7 +345,7 @@ export default function ReviewAnalysisPage() {
 
       sessionStorage.removeItem(`analysis_${projectId}`);
 
-      router.push(`/projects/${projectId}/story`);
+      router.push(`/projects/${projectId}/storyboard`);
     } catch (error) {
       console.error("Error applying:", error);
       alert("保存失败，请重试");
@@ -514,7 +514,7 @@ export default function ReviewAnalysisPage() {
               确认分析结果
             </h1>
             <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-              请检查并编辑 AI 分析的内容，确认无误后进入故事开发
+              请检查并编辑 AI 分析的内容，确认无误后进入分镜设计
             </p>
           </div>
 
@@ -1102,7 +1102,7 @@ export default function ReviewAnalysisPage() {
                 </>
               ) : (
                 <>
-                  确认并进入故事开发
+                  确认并进入分镜设计
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </>
               )}

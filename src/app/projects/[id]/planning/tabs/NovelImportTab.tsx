@@ -2,37 +2,10 @@
 
 import React, { useState, useRef } from "react";
 import { Tooltip } from "@/components/ui/Tooltip";
+import type { NovelAnalysisResult } from "@/types/audit";
 
 interface NovelImportTabProps {
   onAnalysisComplete: (result: NovelAnalysisResult) => void;
-}
-
-interface NovelAnalysisResult {
-  title: string;
-  logline: string;
-  synopsis: string;
-  genre: string;
-  targetDuration: number;
-  characters: Array<{
-    name: string;
-    description: string;
-    role: string;
-    appearance: string;
-  }>;
-  locations: Array<{
-    name: string;
-    description: string;
-  }>;
-  acts: Array<{
-    title: string;
-    description: string;
-    scenes: Array<{
-      title: string;
-      description: string;
-      location: string;
-      characters: string[];
-    }>;
-  }>;
 }
 
 export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
@@ -41,6 +14,9 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
   const [novelTitle, setNovelTitle] = useState("");
   const [analysisResult, setAnalysisResult] = useState<NovelAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,6 +24,7 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
     if (!file) return;
 
     setError(null);
+    setWarnings([]);
     const fileName = file.name.toLowerCase();
 
     try {
@@ -79,6 +56,9 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
 
     setStep("analyzing");
     setError(null);
+    setWarnings([]);
+    setProgress(10);
+    setProgressMessage("准备分析...");
 
     try {
       const response = await fetch("/api/ai/analyze-novel", {
@@ -90,25 +70,34 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
         }),
       });
 
+      setProgress(60);
+      setProgressMessage("处理分析结果...");
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || "分析失败");
       }
 
-      const result = await response.json();
+      const data = await response.json();
 
-      const analysis: NovelAnalysisResult = {
-        title: novelTitle || result.title || "未命名项目",
-        logline: result.logline || result.synopsis?.substring(0, 100) || "",
-        synopsis: result.synopsis || "",
-        genre: result.genre || "",
-        targetDuration: result.targetDuration || 60,
-        characters: result.characters || [],
-        locations: result.locations || [],
-        acts: result.acts || [],
-      };
+      setProgress(90);
+      setProgressMessage("验证数据...");
+
+      if (!data.success) {
+        throw new Error(data.error || "分析失败");
+      }
+
+      const analysis: NovelAnalysisResult = data.result;
+
+      if (data.warnings && data.warnings.length > 0) {
+        setWarnings(data.warnings);
+      }
 
       setAnalysisResult(analysis);
+      setProgress(100);
+      setProgressMessage("分析完成");
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
       setStep("review");
     } catch (error) {
       console.error("Error analyzing novel:", error);
@@ -130,6 +119,9 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
     setNovelTitle("");
     setAnalysisResult(null);
     setError(null);
+    setWarnings([]);
+    setProgress(0);
+    setProgressMessage("");
   };
 
   return (
@@ -180,7 +172,11 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
               </label>
               <textarea
                 value={novelContent}
-                onChange={(e) => setNovelContent(e.target.value)}
+                onChange={(e) => {
+                  setNovelContent(e.target.value);
+                  setError(null);
+                  setWarnings([]);
+                }}
                 placeholder="粘贴小说内容..."
                 className="w-full h-40 px-4 py-3 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-colors text-sm"
               />
@@ -196,6 +192,26 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
                 </svg>
                 <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
               </div>
+            </div>
+          )}
+
+          {/* Warnings */}
+          {warnings.length > 0 && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <h4 className="text-sm font-medium text-amber-700 dark:text-amber-300">验证警告</h4>
+              </div>
+              <ul className="text-sm text-amber-600 dark:text-amber-400 space-y-1">
+                {warnings.map((warning, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="text-amber-400 mt-0.5">•</span>
+                    {warning}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -242,23 +258,37 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
           <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
             <svg className="w-8 h-8 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
           </div>
           <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100 mb-2">
             AI 正在分析您的小说
           </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
-            正在提取角色、场景、情节结构...
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+            {progressMessage || "正在提取角色、场景、情节结构..."}
           </p>
+
+          <div className="max-w-xs mx-auto mb-6">
+            <div className="h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-600 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-xs text-zinc-400 mt-2 text-right">{progress}%</p>
+          </div>
+
           <div className="flex justify-center gap-3">
-            <span className="px-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full">
+            <span className={`px-3 py-1.5 text-xs rounded-full ${progress >= 10 ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"}`}>
+              内容预处理
+            </span>
+            <span className={`px-3 py-1.5 text-xs rounded-full ${progress >= 30 ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"}`}>
               角色识别
             </span>
-            <span className="px-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full">
+            <span className={`px-3 py-1.5 text-xs rounded-full ${progress >= 60 ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"}`}>
               场景提取
             </span>
-            <span className="px-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-full">
+            <span className={`px-3 py-1.5 text-xs rounded-full ${progress >= 90 ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"}`}>
               分幕规划
             </span>
           </div>
@@ -282,8 +312,28 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
             </div>
           </div>
 
+          {/* Warnings */}
+          {warnings.length > 0 && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800/30">
+              <div className="flex items-center gap-2 mb-2">
+                <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <h4 className="text-sm font-medium text-amber-700 dark:text-amber-300">提示信息</h4>
+              </div>
+              <ul className="text-sm text-amber-600 dark:text-amber-400 space-y-1">
+                {warnings.map((warning, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="text-amber-400 mt-0.5">•</span>
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Stats */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-center">
               <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
                 {analysisResult.acts?.length || 0}
@@ -301,6 +351,12 @@ export function NovelImportTab({ onAnalysisComplete }: NovelImportTabProps) {
                 {analysisResult.locations?.length || 0}
               </div>
               <div className="text-xs text-zinc-500">场景地点</div>
+            </div>
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-center">
+              <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+                {analysisResult.props?.length || 0}
+              </div>
+              <div className="text-xs text-zinc-500">道具</div>
             </div>
             <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-center">
               <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">

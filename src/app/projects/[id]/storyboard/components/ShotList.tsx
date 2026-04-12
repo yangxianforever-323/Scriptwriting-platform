@@ -77,6 +77,9 @@ export function ShotList({
           const characters = story.characters.filter((c) =>
             scene.characterIds.includes(c.id)
           );
+          const sceneProps = story.props.filter((p) =>
+            scene.propIds?.includes(p.id)
+          );
 
           const shot = shotDb.create(storyboardId, {
             title: scene.title || `场景 ${sceneIndex + 1}`,
@@ -85,6 +88,7 @@ export function ShotList({
             actId: act.id,
             locationId: scene.locationId,
             characterIds: scene.characterIds,
+            propIds: scene.propIds || [],
             duration: 6,
             shotType: "MS",
             shotTypeName: "中景",

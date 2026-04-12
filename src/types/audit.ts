@@ -164,3 +164,37 @@ export interface AuditOptions {
     importance?: string;
   }>;
 }
+
+export interface NovelAnalysisResult {
+  title: string;
+  logline: string;
+  synopsis: string;
+  genre: string;
+  targetDuration: number;
+  characters: Array<{
+    name: string;
+    description: string;
+    role: "protagonist" | "antagonist" | "supporting" | "minor";
+    appearance: string;
+  }>;
+  locations: Array<{
+    name: string;
+    description: string;
+  }>;
+  props: Array<{
+    name: string;
+    description: string;
+    importance: "key" | "supporting" | "background";
+  }>;
+  acts: Array<{
+    title: string;
+    description: string;
+    scenes: Array<{
+      title: string;
+      description: string;
+      location: string;
+      characters: string[];
+      props: string[];
+    }>;
+  }>;
+}

@@ -4,7 +4,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { actDb, storySceneDb, characterDb, locationDb } from "@/lib/db/story";
+import { actDb, storySceneDb, characterDb, locationDb, propDb } from "@/lib/db/story";
 import { shotDb, storyboardDb } from "@/lib/db/storyboard";
 
 interface GenerateRequest {
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     const acts = actDb.getByStoryId(storyId);
     const characters = characterDb.getByProjectId(storyboardDb.getById(storyboardId)?.projectId || "");
     const locations = locationDb.getByProjectId(storyboardDb.getById(storyboardId)?.projectId || "");
+    const props = propDb.getByProjectId(storyboardDb.getById(storyboardId)?.projectId || "");
 
     if (acts.length === 0) {
       return NextResponse.json({ error: "No acts found for this story" }, { status: 400 });
@@ -39,11 +40,13 @@ export async function POST(request: Request) {
       for (const scene of scenes) {
         const sceneCharacters = characters.filter(c => scene.characterIds?.includes(c.id));
         const location = locations.find(l => l.id === scene.locationId);
+        const sceneProps = props.filter(p => scene.propIds?.includes(p.id));
         
         const shots = generateShotsForScene(
           scene,
           sceneCharacters,
           location,
+          sceneProps,
           act,
           shotsPerScene,
           style,
@@ -81,6 +84,7 @@ function generateShotsForScene(
   scene: any,
   characters: any[],
   location: any,
+  sceneProps: any[],
   act: any,
   shotsPerScene: number,
   style?: string,
@@ -89,6 +93,8 @@ function generateShotsForScene(
   const shots: Partial<any>[] = [];
   const characterNames = characters.map(c => c.name).join("、");
   const locationDesc = location ? `${location.name} - ${location.description}` : scene.description;
+  const propNames = sceneProps.map(p => p.name).join("、");
+  const propIds = sceneProps.map(p => p.id);
 
   if (shotsPerScene >= 1) {
     shots.push({
@@ -102,10 +108,12 @@ function generateShotsForScene(
       cameraAngle: "eye_level",
       cameraAngleName: "平视",
       characterIds: [],
+      propIds: [],
       imagePrompt: generateImagePrompt({
         scene: scene.description,
         location,
         characters: [],
+        props: [],
         shotType: "远景",
         style,
         mood: scene.mood,
@@ -127,10 +135,12 @@ function generateShotsForScene(
       cameraAngle: "eye_level",
       cameraAngleName: "平视",
       characterIds: characters.map(c => c.id),
+      propIds: propIds,
       imagePrompt: generateImagePrompt({
         scene: scene.description,
         location,
         characters,
+        props: sceneProps,
         shotType: "中景",
         style,
         mood: scene.mood,
@@ -153,10 +163,12 @@ function generateShotsForScene(
       cameraAngle: "eye_level",
       cameraAngleName: "平视",
       characterIds: [characters[0]?.id],
+      propIds: propIds.length > 0 ? [propIds[0]] : [],
       imagePrompt: generateImagePrompt({
         scene: scene.description,
         location,
         characters: [characters[0]],
+        props: sceneProps.length > 0 ? [sceneProps[0]] : [],
         shotType: "特写",
         style,
         mood: scene.mood,
@@ -173,6 +185,7 @@ function generateImagePrompt(params: {
   scene: string;
   location?: any;
   characters: any[];
+  props?: any[];
   shotType: string;
   style?: string;
   mood?: string;
@@ -209,6 +222,15 @@ function generateImagePrompt(params: {
         }
       });
     }
+  }
+
+  if (params.props && params.props.length > 0) {
+    params.props.forEach(prop => {
+      parts.push(prop.name);
+      if (prop.description) {
+        parts.push(prop.description);
+      }
+    });
   }
 
   if (params.timeOfDay) {
