@@ -51,7 +51,7 @@ export function StoryboardToolbar({
 
     setIsGenerating(true);
     try {
-      const response = await fetch("/api/ai/generate-storyboard", {
+      const response = await fetch("/api/ai/generate-shots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,7 +1,6 @@
 /**
  * 镜头语言引擎
  * 专业影视镜头语言系统入口
- * 支持规则引擎和AI智能分析两种模式
  */
 
 export * from "./types";
@@ -24,11 +23,6 @@ export { LIGHTING_LIST as lightingTypes } from "./lighting";
 
 import { analyzeScene, getOptimalConfiguration } from "./scene-analyzer";
 import { generatePrompts, generateShotSequence } from "./prompt-builder";
-import {
-  analyzeSceneWithAI,
-  generateShotSequenceWithAI,
-  isAIAnalysisAvailable,
-} from "./ai-analyzer";
 import type {
   ShotConfiguration,
   GeneratedPrompt,
@@ -43,11 +37,12 @@ export const ShotLanguageEngine = {
   generateShotSequence,
   generateSequenceFromDescription: generateShotSequence,
 
-  isAIAnalysisAvailable,
+  isAIAnalysisAvailable: (): boolean => !!process.env.VOLC_API_KEY,
 
   async analyzeSceneWithAI(
     input: SceneDescriptionInput
   ): Promise<{ analysis: ShotAnalysis; confidence: number; reasoning: string }> {
+    const { analyzeSceneWithAI } = await import("./ai-analyzer");
     return analyzeSceneWithAI(input);
   },
 
@@ -60,6 +55,7 @@ export const ShotLanguageEngine = {
     config: Partial<ShotConfiguration>;
     reasoning: string;
   }>> {
+    const { generateShotSequenceWithAI } = await import("./ai-analyzer");
     return generateShotSequenceWithAI(description, shotCount, style);
   },
 
@@ -115,8 +111,9 @@ export const ShotLanguageEngine = {
     reasoning?: string;
     useAI: boolean;
   }>> {
-    if (isAIAnalysisAvailable()) {
+    if (process.env.VOLC_API_KEY) {
       try {
+        const { generateShotSequenceWithAI } = await import("./ai-analyzer");
         const aiResults = await generateShotSequenceWithAI(description, shotCount, style);
 
         return aiResults.map((result) => ({
