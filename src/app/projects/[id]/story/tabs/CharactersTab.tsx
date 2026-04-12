@@ -5,6 +5,7 @@ import type { Story, Character, CharacterRole } from "@/types/story";
 import { characterDb } from "@/lib/db/story";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
+import { AIGenerateImage } from "@/components/ai/AIGenerateImage";
 
 interface CharactersTabProps {
   story: Story;
@@ -21,6 +22,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
+  const [dialogTab, setDialogTab] = useState<"edit" | "ai-generate">("edit");
   const [formData, setFormData] = useState<Partial<Character>>({
     name: "",
     role: "supporting",
@@ -76,6 +78,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
   const handleEdit = (character: Character) => {
     setEditingCharacter(character);
     setFormData(character);
+    setDialogTab("edit");
     setIsDialogOpen(true);
   };
 
@@ -99,6 +102,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
       motivation: "",
       arc: "",
     });
+    setDialogTab("edit");
     setIsDialogOpen(true);
   };
 
@@ -209,12 +213,40 @@ export function CharactersTab({ story }: CharactersTabProps) {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingCharacter ? "编辑角色" : "添加角色"}</DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>
+                {editingCharacter ? "角色编辑" : "添加角色"}
+              </DialogTitle>
+              <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+                <button
+                  onClick={() => setDialogTab("edit")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    dialogTab === "edit"
+                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                      : "text-zinc-500 hover:text-zinc-700"
+                  }`}
+                >
+                  编辑信息
+                </button>
+                <button
+                  onClick={() => setDialogTab("ai-generate")}
+                  disabled={!formData.name?.trim() || !formData.appearance}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    dialogTab === "ai-generate"
+                      ? "bg-green-500 text-white shadow-sm"
+                      : "text-zinc-500 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  AI生图
+                </button>
+              </div>
+            </div>
           </DialogHeader>
-          
-          <div className="space-y-4 mt-4">
+
+          {dialogTab === "edit" ? (
+            <div className="space-y-4 mt-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">角色名称 *</label>
@@ -319,14 +351,30 @@ export function CharactersTab({ story }: CharactersTabProps) {
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={handleSave} disabled={!formData.name?.trim()}>
-              保存
-            </Button>
-          </div>
+          {dialogTab === "ai-generate" && (
+            <AIGenerateImage
+              type="character"
+              data={{
+                name: formData.name,
+                appearance: formData.appearance,
+                personality: formData.personality,
+              }}
+              onImageGenerated={(images) => {
+                console.log("Generated character images:", images);
+              }}
+            />
+          )}
+
+          {dialogTab === "edit" && (
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                取消
+              </Button>
+              <Button onClick={handleSave} disabled={!formData.name?.trim()}>
+                保存
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
