@@ -16,6 +16,8 @@ import {
   LIGHTING_TYPES,
   DEPTH_OF_FIELD,
 } from "@/lib/shot-language";
+import { generateConsistentCharacterPrompt } from "@/lib/character-consistency";
+import type { CharacterConsistencyConfig } from "@/lib/character-consistency";
 import type { StoryScene, Character, Location, Prop, Act } from "@/types/story";
 import type { Shot } from "@/types/storyboard";
 
@@ -52,6 +54,8 @@ export async function POST(request: Request) {
     const shotsPerScene = options.shotsPerScene || 3;
     const generatedShots: Shot[] = [];
 
+    const consistencyRegistry = createConsistencyRegistry(characters);
+
     for (const act of acts) {
       const scenes = storySceneDb.getByActId(act.id);
 
@@ -68,7 +72,8 @@ export async function POST(request: Request) {
           act,
           shotsPerScene,
           style,
-          options
+          options,
+          consistencyRegistry
         );
 
         shots.forEach((shotData, index) => {
@@ -106,7 +111,8 @@ function generateShotsForScene(
   act: Act,
   shotsPerScene: number,
   style?: string,
-  options?: { includeDialogue?: boolean }
+  options?: { includeDialogue?: boolean },
+  consistencyRegistry?: Record<string, CharacterConsistencyConfig>
 ): Partial<Shot>[] {
   const shots: Partial<Shot>[] = [];
   const characterNames = characters.map(c => c.name).join("、");
@@ -160,8 +166,16 @@ function generateShotsForScene(
       characters,
       sceneProps,
       location,
-      isCloseUp
+      isCloseUp,
+      consistencyRegistry
     );
+
+    const shotConsistency: Record<string, CharacterConsistencyConfig> = {};
+    for (const char of characters) {
+      if (consistencyRegistry?.[char.id]) {
+        shotConsistency[char.id] = consistencyRegistry[char.id];
+      }
+    }
 
     shots.push({
       title: shotTitles[i] || `${scene.title} - 镜头${i + 1}`,
@@ -194,6 +208,7 @@ function generateShotsForScene(
         : isCloseUp && characters.length > 0
           ? `捕捉${characters[0].name}的情感表达`
           : `展示${characterNames}的互动`,
+      characterConsistency: Object.keys(shotConsistency).length > 0 ? shotConsistency : undefined,
     });
   }
 
@@ -279,7 +294,8 @@ function enrichImagePrompt(
   characters: Character[],
   props: Prop[],
   location: Location | null,
-  focusOnCharacter: boolean
+  focusOnCharacter: boolean,
+  consistencyRegistry?: Record<string, CharacterConsistencyConfig>
 ): string {
   const parts: string[] = [basePrompt];
 
@@ -296,12 +312,26 @@ function enrichImagePrompt(
   if (characters.length > 0) {
     if (focusOnCharacter && characters[0]) {
       const char = characters[0];
-      parts.push(char.name);
-      if (char.appearance) parts.push(char.appearance);
-    } else {
-      characters.forEach(char => {
+      if (consistencyRegistry?.[char.id]) {
+        const { prompt } = generateConsistentCharacterPrompt(char, consistencyRegistry[char.id], {
+          includeAppearance: true,
+        });
+        parts.push(prompt);
+      } else {
         parts.push(char.name);
         if (char.appearance) parts.push(char.appearance);
+      }
+    } else {
+      characters.forEach(char => {
+        if (consistencyRegistry?.[char.id]) {
+          const { prompt } = generateConsistentCharacterPrompt(char, consistencyRegistry[char.id], {
+            includeAppearance: true,
+          });
+          parts.push(prompt);
+        } else {
+          parts.push(char.name);
+          if (char.appearance) parts.push(char.appearance);
+        }
       });
     }
   }
@@ -314,4 +344,17 @@ function enrichImagePrompt(
   }
 
   return parts.filter(Boolean).join(", ");
+}
+
+function createConsistencyRegistry(characters: Character[]): Record<string, CharacterConsistencyConfig> {
+  const registry: Record<string, CharacterConsistencyConfig> = {};
+
+  characters.forEach((char, index) => {
+    registry[char.id] = {
+      characterId: char.id,
+      seed: 10000 + index * 137,
+    };
+  });
+
+  return registry;
 }

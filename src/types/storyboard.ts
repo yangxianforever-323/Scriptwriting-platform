@@ -3,6 +3,8 @@
  * For storyboard design and shot management
  */
 
+import type { CharacterConsistencyConfig } from "@/lib/character-consistency";
+
 // Shot status for image/video generation
 export type ShotImageStatus = "pending" | "generating" | "completed" | "failed";
 export type ShotVideoStatus = "pending" | "generating" | "completed" | "failed";
@@ -96,6 +98,9 @@ export interface Shot {
   // Creative
   creativeIntent?: string;
   filmReference?: string;
+  
+  // Character consistency
+  characterConsistency?: Record<string, CharacterConsistencyConfig>;
   
   createdAt: string;
   updatedAt: string;

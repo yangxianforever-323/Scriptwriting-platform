@@ -227,6 +227,7 @@ export const shotDb = {
       music: shotData.music,
       creativeIntent: shotData.creativeIntent,
       filmReference: shotData.filmReference,
+      characterConsistency: shotData.characterConsistency,
       createdAt: now,
       updatedAt: now,
     };
