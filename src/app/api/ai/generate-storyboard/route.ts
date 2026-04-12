@@ -156,7 +156,8 @@ async function generateShotsForScene(
   const shotTitles = generateSmartShotTitles(scene.title, sequence.length, characters);
 
   for (let i = 0; i < sequence.length; i++) {
-    const { config, prompts, reasoning, useAI: isAI } = sequence[i];
+    const { config, prompts, useAI: isAI } = sequence[i];
+    const reasoning = (sequence[i] as any).reasoning as string | undefined;
 
     const shotType = config.shotType || "MS";
     const cameraMovement = config.cameraMovement || "static";

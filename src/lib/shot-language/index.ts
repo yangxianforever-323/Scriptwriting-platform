@@ -41,6 +41,7 @@ export const ShotLanguageEngine = {
   getOptimalConfiguration,
   generatePrompts,
   generateShotSequence,
+  generateSequenceFromDescription: generateShotSequence,
 
   isAIAnalysisAvailable,
 
