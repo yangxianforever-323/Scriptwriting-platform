@@ -27,6 +27,11 @@ interface NovelAnalysisResult {
     name: string;
     description: string;
   }>;
+  props: Array<{
+    name: string;
+    description: string;
+    importance: string;
+  }>;
   acts: Array<{
     title: string;
     description: string;
@@ -35,6 +40,7 @@ interface NovelAnalysisResult {
       description: string;
       location: string;
       characters: string[];
+      props?: string[];
     }>;
   }>;
 }
@@ -159,9 +165,9 @@ export default function PlanningPage() {
 
       if (!response.ok) throw new Error("Failed to save project");
 
-      // 2. Save story data (characters, locations, acts) to persistent storage
-      if (result.characters?.length || result.locations?.length || result.acts?.length) {
-        await fetch(`/api/projects/${projectId}/story-data`, {
+      // 2. Save story data (characters, locations, props, acts, scenes) using apply-analysis API
+      if (result.characters?.length || result.locations?.length || result.acts?.length || result.props?.length) {
+        const applyResponse = await fetch(`/api/projects/${projectId}/apply-analysis`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -172,11 +178,15 @@ export default function PlanningPage() {
             targetDuration: result.targetDuration,
             characters: result.characters,
             locations: result.locations,
+            props: result.props,
             acts: result.acts,
-            stage: "planning",
-            status: "completed",
           }),
         });
+
+        if (!applyResponse.ok) {
+          const errorData = await applyResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to apply analysis");
+        }
       }
 
       // 3. Update stage status
