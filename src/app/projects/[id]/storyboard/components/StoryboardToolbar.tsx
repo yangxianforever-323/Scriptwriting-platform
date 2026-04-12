@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Storyboard, Shot } from "@/types/storyboard";
 import type { Story } from "@/types/story";
+import type { AuditReport } from "@/types/audit";
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 
@@ -34,6 +35,9 @@ export function StoryboardToolbar({
     style: "",
     includeDialogue: true,
   });
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
+  const [showAuditDialog, setShowAuditDialog] = useState(false);
 
   const totalDuration = shots.reduce((acc, shot) => acc + shot.duration, 0);
   const completedImages = shots.filter((s) => s.imageStatus === "completed").length;
@@ -76,6 +80,41 @@ export function StoryboardToolbar({
       alert("生成失败，请重试");
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleAuditStoryboard = async () => {
+    if (shots.length === 0) {
+      alert("请先生成分镜");
+      return;
+    }
+
+    setIsAuditing(true);
+    setAuditReport(null);
+    setShowAuditDialog(true);
+    try {
+      const response = await fetch("/api/ai/audit-storyboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyboardId: storyboard.id,
+          strictMode: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "审计失败");
+      }
+
+      const result = await response.json();
+      setAuditReport(result.report);
+    } catch (error) {
+      console.error("Error auditing storyboard:", error);
+      alert(error instanceof Error ? error.message : "审计失败，请重试");
+      setShowAuditDialog(false);
+    } finally {
+      setIsAuditing(false);
     }
   };
 
@@ -171,6 +210,18 @@ export function StoryboardToolbar({
             </div>
 
             <div className="flex items-center gap-2">
+              {shots.length > 0 && (
+                <button
+                  onClick={handleAuditStoryboard}
+                  disabled={isAuditing}
+                  className="px-3 py-2 text-sm border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {isAuditing ? "审计中..." : "AI审计"}
+                </button>
+              )}
               {shots.length === 0 && story && (
                 <button
                   onClick={() => setShowGenerateDialog(true)}
@@ -282,6 +333,98 @@ export function StoryboardToolbar({
               {isGenerating ? "生成中..." : "开始生成"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAuditDialog} onOpenChange={setShowAuditDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>AI 质量审计</DialogTitle>
+          </DialogHeader>
+
+          {isAuditing && !auditReport && (
+            <div className="py-12 text-center">
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
+                <svg className="w-6 h-6 text-amber-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+              <p className="text-sm text-zinc-500">正在审计分镜质量...</p>
+            </div>
+          )}
+
+          {auditReport && (
+            <div className="space-y-4 mt-4">
+              <div className="grid grid-cols-4 gap-3">
+                <div className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-center">
+                  <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{auditReport.overallScore}</div>
+                  <div className="text-xs text-zinc-500">综合评分</div>
+                </div>
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
+                  <div className="text-xl font-bold text-green-600">{auditReport.passedScenes}</div>
+                  <div className="text-xs text-green-600">通过</div>
+                </div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-center">
+                  <div className="text-xl font-bold text-amber-600">{auditReport.warningScenes}</div>
+                  <div className="text-xs text-amber-600">警告</div>
+                </div>
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-center">
+                  <div className="text-xl font-bold text-red-600">{auditReport.errorScenes}</div>
+                  <div className="text-xs text-red-600">错误</div>
+                </div>
+              </div>
+
+              {auditReport.summary.topIssues.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">主要问题</h4>
+                  <div className="space-y-2">
+                    {auditReport.summary.topIssues.slice(0, 8).map((issue, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg text-sm ${
+                          issue.severity === "error"
+                            ? "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30"
+                            : issue.severity === "warning"
+                            ? "bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30"
+                            : "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                            issue.severity === "error" ? "bg-red-100 text-red-700" :
+                            issue.severity === "warning" ? "bg-amber-100 text-amber-700" :
+                            "bg-blue-100 text-blue-700"
+                          }`}>
+                            {issue.severity === "error" ? "错误" : issue.severity === "warning" ? "警告" : "提示"}
+                          </span>
+                          <span className="text-xs text-zinc-500">{issue.dimension}</span>
+                        </div>
+                        <p className="text-zinc-700 dark:text-zinc-300">{issue.message}</p>
+                        {issue.suggestion && (
+                          <p className="text-xs text-zinc-500 mt-1">建议：{issue.suggestion}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {auditReport.summary.recommendations.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">优化建议</h4>
+                  <ul className="space-y-1">
+                    {auditReport.summary.recommendations.map((rec, idx) => (
+                      <li key={idx} className="text-sm text-zinc-600 dark:text-zinc-400 flex items-start gap-2">
+                        <span className="text-blue-500 mt-0.5">•</span>
+                        {rec}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>
