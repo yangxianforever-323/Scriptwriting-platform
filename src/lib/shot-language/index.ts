@@ -1,6 +1,7 @@
 /**
  * 镜头语言引擎
  * 专业影视镜头语言系统入口
+ * 支持规则引擎和AI智能分析两种模式
  */
 
 export * from "./types";
@@ -23,6 +24,11 @@ export { LIGHTING_LIST as lightingTypes } from "./lighting";
 
 import { analyzeScene, getOptimalConfiguration } from "./scene-analyzer";
 import { generatePrompts, generateShotSequence } from "./prompt-builder";
+import {
+  analyzeSceneWithAI,
+  generateShotSequenceWithAI,
+  isAIAnalysisAvailable,
+} from "./ai-analyzer";
 import type {
   ShotConfiguration,
   GeneratedPrompt,
@@ -35,6 +41,26 @@ export const ShotLanguageEngine = {
   getOptimalConfiguration,
   generatePrompts,
   generateShotSequence,
+
+  isAIAnalysisAvailable,
+
+  async analyzeSceneWithAI(
+    input: SceneDescriptionInput
+  ): Promise<{ analysis: ShotAnalysis; confidence: number; reasoning: string }> {
+    return analyzeSceneWithAI(input);
+  },
+
+  async generateShotSequenceWithAI(
+    description: string,
+    shotCount: number = 3,
+    style?: string
+  ): Promise<Array<{
+    shotNumber: number;
+    config: Partial<ShotConfiguration>;
+    reasoning: string;
+  }>> {
+    return generateShotSequenceWithAI(description, shotCount, style);
+  },
 
   generateShotFromDescription(
     description: string,
@@ -57,7 +83,7 @@ export const ShotLanguageEngine = {
 
     const analysis = analyzeScene(input);
     const optimalConfig = getOptimalConfiguration(analysis);
-    
+
     const config: ShotConfiguration = {
       shotType: options?.shotType ?? optimalConfig.shotType,
       cameraMovement: options?.cameraMovement ?? optimalConfig.cameraMovement,
@@ -77,16 +103,39 @@ export const ShotLanguageEngine = {
     };
   },
 
-  generateSequenceFromDescription(
+  async generateSmartSequenceFromDescription(
     description: string,
-    shotCount?: number,
+    shotCount: number = 3,
     style?: string
-  ): Array<{
+  ): Promise<Array<{
     shotNumber: number;
     config: Partial<ShotConfiguration>;
     prompts: GeneratedPrompt;
-  }> {
-    return generateShotSequence(description, shotCount, style);
+    reasoning?: string;
+    useAI: boolean;
+  }>> {
+    if (isAIAnalysisAvailable()) {
+      try {
+        const aiResults = await generateShotSequenceWithAI(description, shotCount, style);
+
+        return aiResults.map((result) => ({
+          shotNumber: result.shotNumber,
+          config: result.config,
+          prompts: generatePrompts(description, result.config, { description, style }),
+          reasoning: result.reasoning,
+          useAI: true,
+        }));
+      } catch (error) {
+        console.warn("AI analysis failed, falling back to rule-based:", error);
+      }
+    }
+
+    const ruleBasedResults = generateShotSequence(description, shotCount, style);
+
+    return ruleBasedResults.map((result) => ({
+      ...result,
+      useAI: false,
+    }));
   },
 };
 

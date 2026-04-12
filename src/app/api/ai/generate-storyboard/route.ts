@@ -1,7 +1,7 @@
 /**
  * POST /api/ai/generate-storyboard
  * Auto-generate storyboard shots from story scenes
- * Uses ShotLanguageEngine for intelligent shot configuration
+ * Uses ShotLanguageEngine (AI + Rule-based) for intelligent shot configuration
  */
 
 import { NextResponse } from "next/server";
@@ -29,6 +29,7 @@ interface GenerateRequest {
     shotsPerScene?: number;
     includeDialogue?: boolean;
     includeCameraMovement?: boolean;
+    useAI?: boolean;
   };
 }
 
@@ -53,8 +54,10 @@ export async function POST(request: Request) {
 
     const shotsPerScene = options.shotsPerScene || 3;
     const generatedShots: Shot[] = [];
+    const useAI = options.useAI !== false && ShotLanguageEngine.isAIAnalysisAvailable();
 
     const consistencyRegistry = createConsistencyRegistry(characters);
+    let previousShot: Partial<Shot> | null = null;
 
     for (const act of acts) {
       const scenes = storySceneDb.getByActId(act.id);
@@ -64,7 +67,7 @@ export async function POST(request: Request) {
         const location = locations.find(l => l.id === scene.locationId) || null;
         const sceneProps = props.filter(p => scene.propIds?.includes(p.id));
 
-        const shots = generateShotsForScene(
+        const shots = await generateShotsForScene(
           scene,
           sceneCharacters,
           location,
@@ -73,8 +76,14 @@ export async function POST(request: Request) {
           shotsPerScene,
           style,
           options,
-          consistencyRegistry
+          consistencyRegistry,
+          previousShot,
+          useAI
         );
+
+        if (shots.length > 0) {
+          previousShot = shots[shots.length - 1];
+        }
 
         shots.forEach((shotData, index) => {
           const createdShot = shotDb.create(storyboardId, {
@@ -88,6 +97,8 @@ export async function POST(request: Request) {
       }
     }
 
+    const continuityReport = checkNarrativeContinuity(generatedShots);
+
     storyboardDb.update(storyboardId, {
       shotCount: generatedShots.length,
     });
@@ -96,6 +107,8 @@ export async function POST(request: Request) {
       success: true,
       shotsGenerated: generatedShots.length,
       shots: generatedShots,
+      analysisMode: useAI ? "AI" : "Rule-based",
+      continuityReport,
     });
   } catch (error) {
     console.error("Error generating storyboard:", error);
@@ -103,7 +116,7 @@ export async function POST(request: Request) {
   }
 }
 
-function generateShotsForScene(
+async function generateShotsForScene(
   scene: StoryScene,
   characters: Character[],
   location: Location | null,
@@ -112,8 +125,10 @@ function generateShotsForScene(
   shotsPerScene: number,
   style?: string,
   options?: { includeDialogue?: boolean },
-  consistencyRegistry?: Record<string, CharacterConsistencyConfig>
-): Partial<Shot>[] {
+  consistencyRegistry?: Record<string, CharacterConsistencyConfig>,
+  previousShot?: Partial<Shot> | null,
+  useAI: boolean = true
+): Promise<Partial<Shot>[]> {
   const shots: Partial<Shot>[] = [];
   const characterNames = characters.map(c => c.name).join("、");
   const locationDesc = location ? `${location.name} - ${location.description}` : scene.description;
@@ -121,16 +136,27 @@ function generateShotsForScene(
 
   const sceneDescription = buildSceneDescription(scene, characters, location, sceneProps);
 
-  const sequence = ShotLanguageEngine.generateSequenceFromDescription(
-    sceneDescription,
-    shotsPerScene,
-    style
-  );
+  let sequence;
 
-  const shotTitles = generateShotTitles(scene.title, shotsPerScene, characters);
+  if (useAI) {
+    sequence = await ShotLanguageEngine.generateSmartSequenceFromDescription(
+      sceneDescription,
+      shotsPerScene,
+      style
+    );
+  } else {
+    const ruleBasedSequence = ShotLanguageEngine.generateSequenceFromDescription(
+      sceneDescription,
+      shotsPerScene,
+      style
+    );
+    sequence = ruleBasedSequence.map(r => ({ ...r, useAI: false }));
+  }
+
+  const shotTitles = generateSmartShotTitles(scene.title, sequence.length, characters);
 
   for (let i = 0; i < sequence.length; i++) {
-    const { config, prompts } = sequence[i];
+    const { config, prompts, reasoning, useAI: isAI } = sequence[i];
 
     const shotType = config.shotType || "MS";
     const cameraMovement = config.cameraMovement || "static";
@@ -203,12 +229,13 @@ function generateShotsForScene(
       imagePrompt: enrichedImagePrompt,
       videoPrompt: prompts.videoPrompt,
       dialogue: options?.includeDialogue && !isEstablishing ? scene.dialogue : undefined,
-      creativeIntent: isEstablishing
+      creativeIntent: reasoning || (isEstablishing
         ? `建立${location?.name || "场景"}的环境氛围`
         : isCloseUp && characters.length > 0
           ? `捕捉${characters[0].name}的情感表达`
-          : `展示${characterNames}的互动`,
+          : `展示${characterNames}的互动`),
       characterConsistency: Object.keys(shotConsistency).length > 0 ? shotConsistency : undefined,
+      filmReference: isAI ? undefined : undefined,
     });
   }
 
@@ -255,7 +282,7 @@ function buildSceneDescription(
   return parts.join("。");
 }
 
-function generateShotTitles(
+function generateSmartShotTitles(
   sceneTitle: string,
   shotCount: number,
   characters: Character[]
@@ -357,4 +384,74 @@ function createConsistencyRegistry(characters: Character[]): Record<string, Char
   });
 
   return registry;
+}
+
+interface ContinuityIssue {
+  severity: "error" | "warning" | "info";
+  type: string;
+  message: string;
+  shotIndex1: number;
+  shotIndex2: number;
+}
+
+function checkNarrativeContinuity(shots: Shot[]): {
+  score: number;
+  issues: ContinuityIssue[];
+  summary: string;
+} {
+  const issues: ContinuityIssue[] = [];
+
+  for (let i = 1; i < shots.length; i++) {
+    const prev = shots[i - 1];
+    const curr = shots[i];
+
+    if (prev.locationId && curr.locationId && prev.locationId !== curr.locationId) {
+      issues.push({
+        severity: "info",
+        type: "location_change",
+        message: `场景从 ${prev.locationId} 切换到 ${curr.locationId}`,
+        shotIndex1: i - 1,
+        shotIndex2: i,
+      });
+    }
+
+    if (
+      prev.shotType === "CU" &&
+      curr.shotType === "CU" &&
+      prev.characterIds.length > 0 &&
+      curr.characterIds.length > 0 &&
+      prev.characterIds[0] !== curr.characterIds[0]
+    ) {
+      issues.push({
+        severity: "warning",
+        type: "jump_cut_risk",
+        message: `连续两个特写切换不同角色 (${prev.characterIds[0]} → ${curr.characterIds[0]}), 可能产生跳剪感`,
+        shotIndex1: i - 1,
+        shotIndex2: i,
+      });
+    }
+
+    if (
+      prev.cameraMovement === "push" &&
+      curr.cameraMovement === "pull"
+    ) {
+      issues.push({
+        severity: "info",
+        type: "movement_contrast",
+        message: `推进后立即拉远，注意节奏变化`,
+        shotIndex1: i - 1,
+        shotIndex2: i,
+      });
+    }
+  }
+
+  const errorCount = issues.filter(i => i.severity === "error").length;
+  const warningCount = issues.filter(i => i.severity === "warning").length;
+  const score = Math.max(0, 100 - (errorCount * 20 + warningCount * 5));
+
+  return {
+    score,
+    issues,
+    summary: `连续性评分: ${score}/100, ${issues.length}个问题 (${errorCount}错误, ${warningCount}警告)`,
+  };
 }
