@@ -622,6 +622,7 @@ export const storySceneStore = {
       description: data.description || "",
       locationId: data.locationId,
       characterIds: data.characterIds || [],
+      propIds: data.propIds || [],
       timeOfDay: data.timeOfDay || "",
       weather: data.weather || "",
       mood: data.mood || "",
