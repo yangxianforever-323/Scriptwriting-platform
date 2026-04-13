@@ -66,6 +66,7 @@ export function CharacterGeneratePanel({
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const resizeStartY = useRef(0);
   const resizeStartH = useRef(0);
 
@@ -102,6 +103,30 @@ export function CharacterGeneratePanel({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Edit tab upload handler - directly set as character thumbnail
+  const handleEditTabUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (!file.type.startsWith("image/")) {
+      alert("请选择图片文件");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        // Directly update character thumbnail
+        onUpdate({ thumbnailUrl: result });
+        alert("图片上传成功！");
+      }
+    };
+    reader.readAsDataURL(file);
+    if (editFileInputRef.current) editFileInputRef.current.value = "";
   };
 
   // Initialize prompt with character data
@@ -190,10 +215,20 @@ export function CharacterGeneratePanel({
                 
                 {/* Quick Actions */}
                 <div className="flex flex-col gap-2 justify-center">
-                  <button className="px-3 py-1.5 text-[10px] bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded hover:bg-blue-600/30 transition-colors flex items-center gap-1.5">
+                  <button
+                    onClick={() => editFileInputRef.current?.click()}
+                    className="px-3 py-1.5 text-[10px] bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
+                  >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     上传已确定图片
                   </button>
+                  <input
+                    ref={editFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleEditTabUpload}
+                    className="hidden"
+                  />
                   <button className="px-3 py-1.5 text-[10px] bg-zinc-700 text-zinc-300 border border-zinc-600 rounded hover:bg-zinc-600 transition-colors flex items-center gap-1.5 opacity-50 cursor-not-allowed">
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                     从素材库导入（开发中）
