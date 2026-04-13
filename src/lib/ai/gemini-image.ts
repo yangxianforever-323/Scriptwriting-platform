@@ -1,12 +1,12 @@
 /**
- * VectorEngine Gemini Image Generation API wrapper.
- * Uses gemini-3.1-flash-image-preview model for image generation.
- * API: https://api.vectorengine.ai/v1/images/generations
+ * VectorEngine Image Generation API wrapper.
+ * Uses /v1/chat/completions endpoint for image generation.
+ * Reference: D:\Trae_project\Design-main\backend\src\api\api.service.ts
  */
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWKBSQyIHIWNHK1R9JVcGvY466R5u7xXEBA";
-const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || "https://api.vectorengine.ai/v1";
-const DEFAULT_MODEL = "gemini-3.1-flash-image-preview";
+const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWKBSQyIHIWNHK1R9JVcGvY466R5u7xXEBA";
+const VECTOR_ENGINE_BASE_URL = process.env.GEMINI_BASE_URL || "https://api.vectorengine.ai";
+const DEFAULT_MODEL = "gpt-image-1.5-all";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
@@ -28,27 +28,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export function isGeminiConfigured(): boolean {
-  return !!GEMINI_API_KEY;
-}
-
-interface ImageGenerationRequest {
-  prompt: string;
-  n?: number;
-  size?: string;
-  response_format?: "url" | "b64_json";
-}
-
-interface ImageGenerationResponse {
-  created: number;
-  data: Array<{
-    url?: string;
-    b64_json?: string;
-  }>;
-  error?: {
-    message: string;
-    type: string;
-    code: string;
-  };
+  return !!VECTOR_ENGINE_API_KEY;
 }
 
 function buildStylePrompt(style?: string, type?: "character" | "location" | "prop" | "scene"): string {
@@ -73,7 +53,7 @@ function buildStylePrompt(style?: string, type?: "character" | "location" | "pro
   };
 
   let result = basePrompts[style ?? "realistic"] || basePrompts.realistic;
-  
+
   if (type && typePrompts[type]) {
     result += typePrompts[type];
   }
@@ -88,27 +68,19 @@ export async function generateImage(
     type?: "character" | "location" | "prop" | "scene";
     size?: "256x256" | "512x512" | "1024x1024" | "1024x1536" | "1536x1024" | "HD(1024*1536)";
     n?: number;
+    model?: string;
   } = {}
 ): Promise<string[]> {
   if (!isGeminiConfigured()) {
-    throw new GeminiImageApiError("Gemini image generation is not configured. Please set GEMINI_API_KEY.");
+    throw new GeminiImageApiError("Image generation is not configured. Please set GEMINI_API_KEY.");
   }
 
   const stylePrompt = buildStylePrompt(options.style, options.type);
   const fullPrompt = `${prompt}${stylePrompt}`;
 
-  const requestBody: ImageGenerationRequest = {
-    prompt: fullPrompt,
-    n: options.n ?? 1,
-    size: options.size ?? "1024x1024",
-    response_format: "b64_json",
-  };
-
-  console.log("Gemini image generation request:", {
-    model: DEFAULT_MODEL,
+  console.log("Image generation request:", {
+    model: options.model || DEFAULT_MODEL,
     promptLength: fullPrompt.length,
-    size: requestBody.size,
-    n: requestBody.n,
   });
 
   const controller = new AbortController();
@@ -118,30 +90,24 @@ export async function generateImage(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`${GEMINI_BASE_URL}/images/generations`, {
+      const response = await fetch(`${VECTOR_ENGINE_BASE_URL}/v1/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${GEMINI_API_KEY}`,
+          Authorization: `Bearer ${VECTOR_ENGINE_API_KEY}`,
         },
         body: JSON.stringify({
-          model: DEFAULT_MODEL,
-          ...requestBody,
+          model: options.model || DEFAULT_MODEL,
+          messages: [
+            { role: "user", content: fullPrompt },
+          ],
         }),
         signal: controller.signal,
       });
 
-      const data: ImageGenerationResponse = await response.json();
+      const data = await response.json();
 
-      console.log(`Gemini image generation attempt ${attempt} status:`, response.status);
-
-      if (data.error) {
-        throw new GeminiImageApiError(
-          data.error.message || `API error: ${data.error.code}`,
-          response.status,
-          data.error.code
-        );
-      }
+      console.log(`Image generation attempt ${attempt} status:`, response.status);
 
       if (!response.ok) {
         throw new GeminiImageApiError(
@@ -150,13 +116,36 @@ export async function generateImage(
         );
       }
 
-      if (!data.data || data.data.length === 0) {
-        throw new GeminiImageApiError("No image data in response");
+      const choice = data?.choices?.[0];
+      if (!choice) {
+        throw new GeminiImageApiError("No choice in response");
       }
 
       clearTimeout(timeoutId);
 
-      return data.data.map((img) => img.b64_json || img.url || "");
+      const images: string[] = [];
+
+      if (choice.message?.content && typeof choice.message.content === "string") {
+        const base64Match = choice.message.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
+        if (base64Match) {
+          images.push(base64Match[0]);
+        }
+      }
+
+      if (Array.isArray(choice.message?.content)) {
+        for (const part of choice.message.content) {
+          if (part.type === "image_url") {
+            images.push(part.image_url?.url || "");
+          }
+        }
+      }
+
+      if (images.length === 0) {
+        console.log("Response data:", JSON.stringify(data).slice(0, 500));
+        throw new GeminiImageApiError("No image found in response");
+      }
+
+      return images;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Unknown error");
 
@@ -175,7 +164,7 @@ export async function generateImage(
       }
 
       if (attempt < MAX_RETRIES) {
-        console.warn(`Gemini Image API attempt ${attempt} failed, retrying...`, error);
+        console.warn(`Image API attempt ${attempt} failed, retrying...`, error);
         await sleep(RETRY_DELAY_MS * attempt);
       }
     }
@@ -218,7 +207,6 @@ ${personality ? `性格特点：${personality}\n` : ""}视角要求：${viewDesc
       const images = await generateImage(prompt, {
         style: options.style || "realistic",
         type: "character",
-        size: "HD(1024*1536)",
         n: 1,
       });
 
@@ -250,8 +238,6 @@ ${atmosphere ? `氛围特点：${atmosphere}\n` : ""}高质量场景设计图，
   const images = await generateImage(prompt, {
     style: options.style || "cinematic",
     type: "location",
-    size: "1536x1024",
-    n: 1,
   });
 
   return images[0];
@@ -272,8 +258,6 @@ ${importance ? `重要程度/用途：${importance}\n` : ""}高质量道具设�
   const images = await generateImage(prompt, {
     style: options.style || "realistic",
     type: "prop",
-    size: "1024x1024",
-    n: 1,
   });
 
   return images[0];
@@ -326,8 +310,6 @@ export async function generateSceneImage(
   const images = await generateImage(prompt, {
     style: options.style || "cinematic",
     type: "scene",
-    size: "16:9" === options.shotType ? "1536x1024" : "1024x1024",
-    n: 1,
   });
 
   return images[0];
