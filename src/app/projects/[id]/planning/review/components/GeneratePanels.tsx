@@ -354,21 +354,23 @@ export function CharacterGeneratePanel({
                       "电影质感": "cinematic", "插画风": "cartoon", "3D渲染": "realistic"
                     };
                     const styleValue = stylePreset ? styleMap[stylePreset] || stylePreset : "realistic";
+                    const resolutionMap = {
+                      "512x768": "1K",
+                      "1024x1536": "2K",
+                      "2048x3072": "4K",
+                      "custom": "2K",
+                    };
+                    const resolutionValue = resolutionMap[resolution] || "2K";
 
                     const response = await fetch("/api/ai/generate-image", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        type: "character",
-                        data: {
-                          name: character.name,
-                          appearance: character.appearance,
-                          personality: character.description,
-                        },
-                        prompt: prompt.trim() || `${character.name}，${character.appearance}`,
-                        selectedViews: [selectedImageType],
+                        prompt: prompt.trim() || `${character.name}，${character.appearance}，${character.description?.substring(0, 100) || ""}`,
                         style: styleValue,
+                        type: "character",
                         aspectRatio: aspectRatio,
+                        resolution: resolutionValue,
                         count: quantity,
                       }),
                     });

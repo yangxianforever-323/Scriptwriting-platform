@@ -1,7 +1,8 @@
+
 /**
  * VectorEngine Image Generation API wrapper.
  * Uses /v1/chat/completions endpoint for image generation.
- * Reference: D:\Trae_project\Design-main\backend\src\api\api.service.ts
+ * Reference: D:\Trae_project\Design-main\src\services\ai.ts
  */
 
 const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWKBSQyIHIWNHK1R9JVcGvY466R5u7xXEBA";
@@ -23,8 +24,8 @@ export class GeminiImageApiError extends Error {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number): Promise&lt;void&gt; {
+  return new Promise((resolve) =&gt; setTimeout(resolve, ms));
 }
 
 export function isGeminiConfigured(): boolean {
@@ -32,7 +33,7 @@ export function isGeminiConfigured(): boolean {
 }
 
 function buildStylePrompt(style?: string, type?: "character" | "location" | "prop" | "scene"): string {
-  const basePrompts: Record<string, string> = {
+  const basePrompts: Record&lt;string, string&gt; = {
     realistic: ", photorealistic, high quality, natural lighting, sharp details, professional photography",
     anime: ", anime style, vibrant colors, clean lines, Japanese animation style",
     cartoon: ", cartoon style, bright colors, playful, exaggerated features",
@@ -45,7 +46,7 @@ function buildStylePrompt(style?: string, type?: "character" | "location" | "pro
     scifi: ", sci-fi style, futuristic, high-tech, space age, advanced technology",
   };
 
-  const typePrompts: Record<string, string> = {
+  const typePrompts: Record&lt;string, string&gt; = {
     character: ", character design, full body or portrait, detailed facial features, expressive",
     location: ", environment design, architectural details, atmospheric perspective, immersive background",
     prop: ", object photography, product shot, detailed texture, studio lighting, centered composition",
@@ -54,11 +55,58 @@ function buildStylePrompt(style?: string, type?: "character" | "location" | "pro
 
   let result = basePrompts[style ?? "realistic"] || basePrompts.realistic;
 
-  if (type && typePrompts[type]) {
+  if (type &amp;&amp; typePrompts[type]) {
     result += typePrompts[type];
   }
 
   return result;
+}
+
+function calculateSize(aspectRatio?: string, resolution?: string) {
+  let width = 1024;
+  let height = 1024;
+
+  if (resolution) {
+    switch (resolution) {
+      case "1K":
+        width = 1024;
+        height = 1024;
+        break;
+      case "2K":
+        width = 1792;
+        height = 1024;
+        break;
+      case "4K":
+        width = 2048;
+        height = 1536;
+        break;
+      case "8K":
+        width = 3072;
+        height = 2048;
+        break;
+    }
+  }
+
+  if (aspectRatio &amp;&amp; aspectRatio !== "custom") {
+    switch (aspectRatio) {
+      case "1:1":
+        height = width;
+        break;
+      case "16:9":
+        height = Math.round(width * 9 / 16);
+        break;
+      case "9:16":
+        const tempHeight = height;
+        height = width;
+        width = tempHeight;
+        break;
+      case "4:3":
+        height = Math.round(width * 3 / 4);
+        break;
+    }
+  }
+
+  return { width, height };
 }
 
 export async function generateImage(
@@ -66,30 +114,72 @@ export async function generateImage(
   options: {
     style?: string;
     type?: "character" | "location" | "prop" | "scene";
-    size?: "256x256" | "512x512" | "1024x1024" | "1024x1536" | "1536x1024" | "HD(1024*1536)";
+    aspectRatio?: string;
+    resolution?: string;
     n?: number;
     model?: string;
+    referenceImages?: string[];
   } = {}
-): Promise<string[]> {
+): Promise&lt;string[]&gt; {
   if (!isGeminiConfigured()) {
     throw new GeminiImageApiError("Image generation is not configured. Please set GEMINI_API_KEY.");
   }
 
   const stylePrompt = buildStylePrompt(options.style, options.type);
+  const { width, height } = calculateSize(options.aspectRatio, options.resolution);
   const fullPrompt = `${prompt}${stylePrompt}`;
 
   console.log("Image generation request:", {
     model: options.model || DEFAULT_MODEL,
     promptLength: fullPrompt.length,
+    width,
+    height,
   });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() =&gt; controller.abort(), REQUEST_TIMEOUT_MS);
 
   let lastError: Error | null = null;
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 1; attempt &lt;= MAX_RETRIES; attempt++) {
     try {
+      const messages: any[] = [];
+
+      const systemPrompt = `You are a professional image generation AI.
+
+CRITICAL RULES - MUST FOLLOW EXACTLY:
+1. Generate the requested image with high quality
+2. Pay attention to all details in the prompt
+3. Do NOT add any text or watermarks to the image
+4. Return ONLY the image data, no additional text`;
+
+      messages.push({
+        role: "system",
+        content: systemPrompt,
+      });
+
+      const userContent: any[] = [];
+
+      if (options.referenceImages &amp;&amp; options.referenceImages.length &gt; 0) {
+        options.referenceImages.forEach((img) =&gt; {
+          userContent.push({
+            type: "image_url",
+            image_url: { url: img },
+          });
+        });
+      }
+
+      const sizeRequirements = `EXACT IMAGE SIZE: ${width}x${height} pixels. DO NOT DEVIATE FROM THIS SIZE.`;
+      userContent.push({
+        type: "text",
+        text: `${fullPrompt}\n\n${sizeRequirements}`,
+      });
+
+      messages.push({
+        role: "user",
+        content: userContent,
+      });
+
       const response = await fetch(`${VECTOR_ENGINE_BASE_URL}/v1/chat/completions`, {
         method: "POST",
         headers: {
@@ -98,9 +188,8 @@ export async function generateImage(
         },
         body: JSON.stringify({
           model: options.model || DEFAULT_MODEL,
-          messages: [
-            { role: "user", content: fullPrompt },
-          ],
+          messages: messages,
+          max_tokens: 4096,
         }),
         signal: controller.signal,
       });
@@ -116,32 +205,39 @@ export async function generateImage(
         );
       }
 
-      const choice = data?.choices?.[0];
-      if (!choice) {
-        throw new GeminiImageApiError("No choice in response");
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new GeminiImageApiError("No content in response");
       }
 
       clearTimeout(timeoutId);
 
       const images: string[] = [];
 
-      if (choice.message?.content && typeof choice.message.content === "string") {
-        const base64Match = choice.message.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
-        if (base64Match) {
-          images.push(base64Match[0]);
+      if (content.startsWith("data:image/")) {
+        const fullDataUrlMatch = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
+        if (fullDataUrlMatch) {
+          images.push(fullDataUrlMatch[0]);
         }
       }
 
-      if (Array.isArray(choice.message?.content)) {
-        for (const part of choice.message.content) {
-          if (part.type === "image_url") {
-            images.push(part.image_url?.url || "");
-          }
-        }
+      const base64Match = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
+      if (base64Match &amp;&amp; images.length === 0) {
+        images.push(base64Match[0]);
+      }
+
+      const pureBase64Match = content.match(/^[A-Za-z0-9+/=]{100,}/);
+      if (pureBase64Match &amp;&amp; images.length === 0) {
+        images.push(`data:image/png;base64,${pureBase64Match[0]}`);
       }
 
       if (images.length === 0) {
-        console.log("Response data:", JSON.stringify(data).slice(0, 500));
+        console.log("Response content:", content.slice(0, 500));
+        if (attempt &lt; MAX_RETRIES) {
+          console.warn(`Attempt ${attempt} returned text instead of image, retrying...`);
+          await sleep(RETRY_DELAY_MS * attempt);
+          continue;
+        }
         throw new GeminiImageApiError("No image found in response");
       }
 
@@ -149,7 +245,7 @@ export async function generateImage(
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Unknown error");
 
-      if (error instanceof GeminiImageApiError && (
+      if (error instanceof GeminiImageApiError &amp;&amp; (
         error.statusCode === 401 ||
         error.statusCode === 403 ||
         error.errorCode === "authentication_error"
@@ -163,7 +259,7 @@ export async function generateImage(
         throw new GeminiImageApiError("Request timed out");
       }
 
-      if (attempt < MAX_RETRIES) {
+      if (attempt &lt; MAX_RETRIES) {
         console.warn(`Image API attempt ${attempt} failed, retrying...`, error);
         await sleep(RETRY_DELAY_MS * attempt);
       }
@@ -183,10 +279,12 @@ export async function generateCharacterImages(
   options: {
     views?: ("front" | "side" | "back" | "three_quarter" | "close_up")[];
     style?: string;
+    aspectRatio?: string;
+    resolution?: string;
   } = {}
-): Promise<Array<{ view: string; imageData: string }>> {
-  const views = options.views || ["front", "side", "back", "three_quarter", "close_up"];
-  const viewDescriptions: Record<string, string> = {
+): Promise&lt;Array&lt;{ view: string; imageData: string }&gt;&gt; {
+  const views = options.views || ["front"];
+  const viewDescriptions: Record&lt;string, string&gt; = {
     front: "正面全身像，直视镜头，完整展示角色外观和服装",
     side: "侧面全身像，展示角色轮廓和侧面特征",
     back: "背面全身像，展示角色背面造型和服装细节",
@@ -194,7 +292,7 @@ export async function generateCharacterImages(
     close_up: "面部特写，详细展示角色五官、表情和神态特征",
   };
 
-  const results: Array<{ view: string; imageData: string }> = [];
+  const results: Array&lt;{ view: string; imageData: string }&gt; = [];
 
   for (const view of views) {
     const viewDesc = viewDescriptions[view] || view;
@@ -207,6 +305,8 @@ ${personality ? `性格特点：${personality}\n` : ""}视角要求：${viewDesc
       const images = await generateImage(prompt, {
         style: options.style || "realistic",
         type: "character",
+        aspectRatio: options.aspectRatio || "3:4",
+        resolution: options.resolution || "2K",
         n: 1,
       });
 
@@ -229,8 +329,10 @@ export async function generateLocationImage(
   atmosphere?: string,
   options: {
     style?: string;
+    aspectRatio?: string;
+    resolution?: string;
   } = {}
-): Promise<string> {
+): Promise&lt;string&gt; {
   const prompt = `场景名称：${locationName}
 环境描述：${description}
 ${atmosphere ? `氛围特点：${atmosphere}\n` : ""}高质量场景设计图，用于影视制作参考，展示完整的空间布局和环境细节`;
@@ -238,6 +340,8 @@ ${atmosphere ? `氛围特点：${atmosphere}\n` : ""}高质量场景设计图，
   const images = await generateImage(prompt, {
     style: options.style || "cinematic",
     type: "location",
+    aspectRatio: options.aspectRatio || "16:9",
+    resolution: options.resolution || "2K",
   });
 
   return images[0];
@@ -249,8 +353,10 @@ export async function generatePropImage(
   importance?: string,
   options: {
     style?: string;
+    aspectRatio?: string;
+    resolution?: string;
   } = {}
-): Promise<string> {
+): Promise&lt;string&gt; {
   const prompt = `道具名称：${propName}
 道具描述：${description}
 ${importance ? `重要程度/用途：${importance}\n` : ""}高质量道具设计图，用于影视制作参考，清晰展示道具的材质、形状和细节`;
@@ -258,6 +364,8 @@ ${importance ? `重要程度/用途：${importance}\n` : ""}高质量道具设�
   const images = await generateImage(prompt, {
     style: options.style || "realistic",
     type: "prop",
+    aspectRatio: options.aspectRatio || "1:1",
+    resolution: options.resolution || "2K",
   });
 
   return images[0];
@@ -272,11 +380,13 @@ export async function generateSceneImage(
   options: {
     style?: string;
     shotType?: string;
+    aspectRatio?: string;
+    resolution?: string;
   } = {}
-): Promise<string> {
+): Promise&lt;string&gt; {
   let prompt = sceneDescription;
 
-  if (characters && characters.length > 0) {
+  if (characters &amp;&amp; characters.length &gt; 0) {
     prompt += `\n场景中的角色：${characters.join("、")}`;
   }
 
@@ -284,7 +394,7 @@ export async function generateSceneImage(
     prompt += `\n场景地点：${location}`;
   }
 
-  if (props && props.length > 0) {
+  if (props &amp;&amp; props.length &gt; 0) {
     prompt += `\n场景中的道具：${props.join("、")}`;
   }
 
@@ -293,7 +403,7 @@ export async function generateSceneImage(
   }
 
   if (options.shotType) {
-    const shotTypes: Record<string, string> = {
+    const shotTypes: Record&lt;string, string&gt; = {
       EWS: "极远景，展示宏大环境和空间关系",
       LS: "远景，建立场景环境",
       FS: "全景，展示人物与环境的关系",
@@ -310,6 +420,8 @@ export async function generateSceneImage(
   const images = await generateImage(prompt, {
     style: options.style || "cinematic",
     type: "scene",
+    aspectRatio: options.aspectRatio || "16:9",
+    resolution: options.resolution || "2K",
   });
 
   return images[0];
@@ -320,8 +432,10 @@ export async function regenerateImage(
   options: {
     style?: string;
     type?: "character" | "location" | "prop" | "scene";
-    size?: string;
+    aspectRatio?: string;
+    resolution?: string;
   } = {}
-): Promise<string[]> {
+): Promise&lt;string[]&gt; {
   return generateImage(prompt, options);
 }
+
