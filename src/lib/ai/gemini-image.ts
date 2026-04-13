@@ -6,7 +6,7 @@
 
 const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWKBSQyIHIWNHK1R9JVcGvY466R5u7xXEBA";
 const VECTOR_ENGINE_BASE_URL = process.env.GEMINI_BASE_URL || "https://api.vectorengine.ai";
-const DEFAULT_MODEL = "gpt-image-1.5-all";
+const DEFAULT_MODEL = "gemini-3.1-flash-image-preview";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
