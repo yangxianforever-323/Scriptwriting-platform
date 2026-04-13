@@ -9,9 +9,9 @@ const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWK
 const VECTOR_ENGINE_BASE_URL = process.env.GEMINI_BASE_URL || "https://api.vectorengine.ai";
 const DEFAULT_MODEL = "gemini-3.1-flash-image-preview";
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 2000;
-const REQUEST_TIMEOUT_MS = 120000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 5000;
+const REQUEST_TIMEOUT_MS = 180000;
 
 export class GeminiImageApiError extends Error {
   constructor(
