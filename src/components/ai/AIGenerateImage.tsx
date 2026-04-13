@@ -76,6 +76,7 @@ export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImag
   };
 
   const handleGenerate = async () => {
+    console.log("=== handleGenerate called ===");
     setIsGenerating(true);
     setError(null);
     setGeneratedImages([]);
@@ -108,18 +109,18 @@ export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImag
         body: JSON.stringify(requestBody),
       });
 
+      console.log("Response status:", response.status);
       const result = await response.json();
+      console.log("Response result:", result);
 
       if (!response.ok) {
         throw new Error(result.error || "Failed to generate image");
       }
 
-      console.log("Image generation result:", result);
-
       let images: Array<{ url: string; view?: string; fileName?: string }> = [];
 
       if (type === "character" && result.images) {
-        images = result.images.map((img: { url: string; view: string }) => ({
+        images = result.images.map((img: { url: string; view: string; fileName?: string }) => ({
           url: img.url,
           view: img.view,
           fileName: img.fileName,
@@ -127,12 +128,13 @@ export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImag
       } else if (result.url) {
         images = [{ url: result.url, fileName: result.fileName }];
       } else if (result.images) {
-        images = result.images.map((img: { url: string; fileName: string }) => ({
+        images = result.images.map((img: { url: string; fileName?: string }) => ({
           url: img.url,
           fileName: img.fileName,
         }));
       }
 
+      console.log("Generated images:", images);
       setGeneratedImages(images);
       onImageGenerated?.(images);
     } catch (err) {
@@ -360,7 +362,7 @@ export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImag
                   ) : (
                     <div className="text-center">
                       <svg className="w-12 h-12 mx-auto text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 0 002 2z" />
                       </svg>
                       <p className="text-xs text-zinc-400 mt-2">图片加载中...</p>
                     </div>
@@ -396,19 +398,24 @@ export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImag
       )}
 
       <div className="flex justify-end gap-2 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={() => console.log("Refresh composition clicked")}>
           <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           刷新构图
         </Button>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={() => console.log("Style clicked")}>
           <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 0 002 2z" />
           </svg>
           风格化
         </Button>
-        <Button size="sm">
+        <Button size="sm" onClick={() => {
+          console.log("Confirm use clicked with images:", generatedImages);
+          if (generatedImages.length > 0) {
+            onImageGenerated?.(generatedImages);
+          }
+        }}>
           <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
