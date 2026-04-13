@@ -342,20 +342,62 @@ export function CharacterGeneratePanel({
 
               {/* Generate Button */}
               <button
-                onClick={() => {
+                onClick={async () => {
                   setGenerating(true);
-                  setTimeout(() => {
+                  setGeneratedImages([]);
+                  setConfirmedImage(null);
+
+                  try {
+                    const styleMap: Record<string, string> = {
+                      "写实风": "realistic", "动漫风": "anime", "水墨风": "watercolor",
+                      "油画风": "oil_painting", "赛博朋克": "cyberpunk", "古风": "fantasy",
+                      "电影质感": "cinematic", "插画风": "cartoon", "3D渲染": "realistic"
+                    };
+                    const styleValue = stylePreset ? styleMap[stylePreset] || stylePreset : "realistic";
+
+                    const response = await fetch("/api/ai/generate-image", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        type: "character",
+                        data: {
+                          name: character.name,
+                          appearance: character.appearance,
+                          personality: character.description,
+                        },
+                        prompt: prompt.trim() || `${character.name}，${character.appearance}`,
+                        selectedViews: [selectedImageType],
+                        style: styleValue,
+                        aspectRatio: aspectRatio,
+                        count: quantity,
+                      }),
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                      throw new Error(result.error || "图片生成失败");
+                    }
+
+                    let images: string[] = [];
+                    if (result.images && Array.isArray(result.images)) {
+                      images = result.images.map((img: any) => img.url || img);
+                    } else if (result.url) {
+                      images = [result.url];
+                    }
+
+                    if (images.length > 0) {
+                      setGeneratedImages(images);
+                    } else {
+                      console.log("API response:", result);
+                      throw new Error("未返回有效图片");
+                    }
+                  } catch (error) {
+                    console.error("Image generation error:", error);
+                    alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
+                  } finally {
                     setGenerating(false);
-                    const isWide = selectedImageType === "combo";
-                    const isSquare = selectedImageType === "closeup-threeview";
-                    const w = isWide ? 600 : isSquare ? 400 : 300;
-                    const h = isWide ? 350 : isSquare ? 400 : 450;
-                    setGeneratedImages(
-                      Array.from({ length: quantity }, (_, i) =>
-                        `https://via.placeholder.com/${w}x${h}?text=${selectedImageType === "combo" ? "组合图" : selectedImageType === "fullbody-threeview" ? "全身三视图" : selectedImageType === "closeup-threeview" ? "特写三视图" : selectedImageType === "portrait" ? "肖像" : "全身"}${i + 1}`
-                      )
-                    );
-                  }, 2000);
+                  }
                 }}
                 disabled={generating}
                 className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
