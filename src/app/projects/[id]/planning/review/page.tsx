@@ -173,6 +173,9 @@ export default function ReviewAnalysisPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "characters" | "locations" | "acts">("overview");
   const [optimizing, setOptimizing] = useState<string | null>(null);
 
@@ -387,6 +390,7 @@ export default function ReviewAnalysisPage() {
       newCharacters[index] = { ...newCharacters[index], ...updates };
       return { ...prev, characters: newCharacters };
     });
+    setHasUnsavedChanges(true);
   };
 
   const addCharacter = () => {
@@ -403,6 +407,7 @@ export default function ReviewAnalysisPage() {
         },
       ],
     }));
+    setHasUnsavedChanges(true);
   };
 
   const removeCharacter = (index: number) => {
@@ -410,6 +415,7 @@ export default function ReviewAnalysisPage() {
       ...prev,
       characters: prev.characters.filter((_, i) => i !== index),
     }));
+    setHasUnsavedChanges(true);
   };
 
   const updateLocation = (index: number, updates: Partial<AnalysisLocation>) => {
@@ -418,6 +424,7 @@ export default function ReviewAnalysisPage() {
       newLocations[index] = { ...newLocations[index], ...updates };
       return { ...prev, locations: newLocations };
     });
+    setHasUnsavedChanges(true);
   };
 
   const addLocation = () => {
@@ -432,6 +439,7 @@ export default function ReviewAnalysisPage() {
         },
       ],
     }));
+    setHasUnsavedChanges(true);
   };
 
   const removeLocation = (index: number) => {
@@ -439,6 +447,7 @@ export default function ReviewAnalysisPage() {
       ...prev,
       locations: prev.locations.filter((_, i) => i !== index),
     }));
+    setHasUnsavedChanges(true);
   };
 
   const updateAct = (actIndex: number, updates: Partial<AnalysisAct>) => {
@@ -447,6 +456,7 @@ export default function ReviewAnalysisPage() {
       newActs[actIndex] = { ...newActs[actIndex], ...updates };
       return { ...prev, acts: newActs };
     });
+    setHasUnsavedChanges(true);
   };
 
   const updateScene = (actIndex: number, sceneIndex: number, updates: Partial<AnalysisScene>) => {
@@ -457,6 +467,7 @@ export default function ReviewAnalysisPage() {
       newActs[actIndex] = { ...newActs[actIndex], scenes: newScenes };
       return { ...prev, acts: newActs };
     });
+    setHasUnsavedChanges(true);
   };
 
   const addAct = () => {
@@ -472,6 +483,7 @@ export default function ReviewAnalysisPage() {
         },
       ],
     }));
+    setHasUnsavedChanges(true);
   };
 
   const addScene = (actIndex: number) => {
@@ -492,6 +504,50 @@ export default function ReviewAnalysisPage() {
       };
       return { ...prev, acts: newActs };
     });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSaveStatus("保存中...");
+
+    try {
+      sessionStorage.setItem(`analysis_${projectId}`, JSON.stringify(analysisData));
+
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: analysisData.title,
+          stage_progress: {
+            planning: {
+              status: "in_progress",
+              updatedAt: new Date().toISOString(),
+              data: {
+                logline: analysisData.logline,
+                synopsis: analysisData.synopsis,
+                genre: analysisData.genre,
+                targetDuration: analysisData.targetDuration,
+              },
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to save");
+
+      setHasUnsavedChanges(false);
+      setSaveStatus("已保存");
+
+      setTimeout(() => setSaveStatus(""), 2000);
+    } catch (error) {
+      console.error("Error saving:", error);
+      setError("保存失败，请重试");
+      setSaveStatus("");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -509,13 +565,28 @@ export default function ReviewAnalysisPage() {
       <div className="max-w-[1400px] mx-auto px-6 py-8">
         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
           {/* Header */}
-          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-              确认分析结果
-            </h1>
-            <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-              请检查并编辑 AI 分析的内容，确认无误后进入分镜设计
-            </p>
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+                确认分析结果
+              </h1>
+              <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+                请检查并编辑 AI 分析的内容，确认无误后进入分镜设计
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {saveStatus && (
+                <span className={`text-sm ${saveStatus.includes("失败") ? "text-red-500" : "text-green-500"}`}>
+                  {saveStatus}
+                </span>
+              )}
+              {hasUnsavedChanges && !saving && (
+                <span className="text-xs text-amber-500 flex items-center gap-1">
+                  <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                  未保存
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Tabs */}
@@ -1083,13 +1154,30 @@ export default function ReviewAnalysisPage() {
           </div>
 
           {/* Actions */}
-          <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-between">
-            <button
-              onClick={() => router.push(`/projects/${projectId}/planning`)}
-              className="px-5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm"
-            >
-              返回上一步
-            </button>
+          <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+            <div className="flex gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm flex items-center gap-2"
+              >
+                {saving ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                )}
+                保存
+              </button>
+              <button
+                onClick={() => router.push(`/projects/${projectId}/planning`)}
+                disabled={saving}
+                className="px-5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm"
+              >
+                返回上一步
+              </button>
+            </div>
             <button
               onClick={handleApplyAndContinue}
               disabled={saving}
@@ -1103,7 +1191,9 @@ export default function ReviewAnalysisPage() {
               ) : (
                 <>
                   确认并进入分镜设计
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 </>
               )}
             </button>
