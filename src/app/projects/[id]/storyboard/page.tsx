@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
 import { storyboardDb, shotDb } from "@/lib/db/storyboard";
 import { storyDb } from "@/lib/db/story";
+import { saveStageProgress, createAutoSave } from "@/lib/save-utils";
 import type { Project } from "@/types/database";
 import type { Storyboard, Shot } from "@/types/storyboard";
 import type { Story } from "@/types/story";
@@ -22,10 +23,52 @@ export default function StoryboardPage() {
   const [storyboard, setStoryboard] = useState<Storyboard | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  const autoSaveRef = useRef<ReturnType<typeof createAutoSave> | null>(null);
+  const isMountedRef = useRef(false);
 
   useEffect(() => {
+    isMountedRef.current = true;
     loadData();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [projectId]);
+
+  useEffect(() => {
+    if (!storyboard || shots.length === 0) return;
+
+    autoSaveRef.current = createAutoSave(async () => {
+      const currentBoard = storyboardDb.getByProjectId(projectId);
+      if (!currentBoard) return;
+
+      const allShots = shotDb.getByStoryboardId(currentBoard.id);
+
+      const result = await saveStageProgress({
+        projectId,
+        stage: "storyboard",
+        status: "in_progress",
+        data: {
+          storyboardId: currentBoard.id,
+          shotsCount: allShots.length,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      if (!result.success) {
+        console.error("Auto-save failed:", result.error);
+      }
+    }, 3000);
+
+    return () => {
+      autoSaveRef.current?.cancel();
+    };
+  }, [projectId, storyboard?.id, shots.length]);
 
   const loadData = async () => {
     try {
@@ -34,7 +77,6 @@ export default function StoryboardPage() {
       const data = await response.json();
       setProject(data.project);
 
-      // 使用API获取story数据（因为数据存储在服务端文件系统）
       let storyData = null;
       try {
         const storyResponse = await fetch(`/api/projects/${projectId}/story-data`);
@@ -42,7 +84,6 @@ export default function StoryboardPage() {
           const storyResult = await storyResponse.json();
           if (storyResult.story) {
             storyData = storyResult.story;
-            // 补充characters, locations, props
             if (storyResult.characters) storyData.characters = storyResult.characters;
             if (storyResult.locations) storyData.locations = storyResult.locations;
             if (storyResult.props) storyData.props = storyResult.props;
@@ -52,7 +93,7 @@ export default function StoryboardPage() {
       } catch (e) {
         console.log("Story data not available from API");
       }
-      
+
       setStory(storyData);
 
       let activeBoard = storyboardDb.getActiveByProjectId(projectId);
@@ -66,6 +107,7 @@ export default function StoryboardPage() {
 
       const shotList = shotDb.getByStoryboardId(activeBoard.id);
       setShots(shotList);
+      setSaveStatus("已加载");
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -73,25 +115,106 @@ export default function StoryboardPage() {
     }
   };
 
-  const handleUpdate = (updatedStoryboard: Storyboard, updatedShots: Shot[]) => {
+  const handleUpdate = useCallback((updatedStoryboard: Storyboard, updatedShots: Shot[]) => {
     setStoryboard(updatedStoryboard);
     setShots(updatedShots);
+    setHasUnsavedChanges(true);
+    autoSaveRef.current?.trigger();
+  }, []);
+
+  const handleManualSave = async () => {
+    if (!storyboard) return;
+
+    setSaving(true);
+    setError(null);
+    setSaveStatus("保存中...");
+
+    try {
+      const currentBoard = storyboardDb.getByProjectId(projectId);
+      if (!currentBoard) throw new Error("Storyboard not found");
+
+      const allShots = shotDb.getByStoryboardId(currentBoard.id);
+
+      const result = await saveStageProgress({
+        projectId,
+        stage: "storyboard",
+        status: "in_progress",
+        data: {
+          storyboardId: currentBoard.id,
+          shotsCount: allShots.length,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      setHasUnsavedChanges(false);
+      setSaveStatus("已保存");
+
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setSaveStatus("");
+        }
+      }, 2000);
+    } catch (error) {
+      console.error("Error saving:", error);
+      setError("保存失败，请重试");
+      setSaveStatus("");
+    } finally {
+      if (isMountedRef.current) {
+        setSaving(false);
+      }
+    }
   };
 
   const handleComplete = async () => {
-    await fetch(`/api/projects/${projectId}/stage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    if (!storyboard) return;
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const currentBoard = storyboardDb.getByProjectId(projectId);
+      if (!currentBoard) throw new Error("Storyboard not found");
+
+      const allShots = shotDb.getByStoryboardId(currentBoard.id);
+
+      await saveStageProgress({
+        projectId,
         stage: "storyboard",
         status: "completed",
         data: {
-          shotsCount: shots.length,
-          versionsCount: storyboardDb.getByProjectId(projectId).length,
+          storyboardId: currentBoard.id,
+          shotsCount: allShots.length,
+          completedAt: new Date().toISOString(),
         },
-      }),
-    });
-    router.push(`/projects/${projectId}/production`);
+      });
+
+      await fetch(`/api/projects/${projectId}/stage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: "storyboard",
+          status: "completed",
+          data: {
+            shotsCount: allShots.length,
+            versionsCount: storyboardDb.getByProjectId(projectId).length,
+          },
+        }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      router.push(`/projects/${projectId}/production`);
+    } catch (error) {
+      console.error("Error completing storyboard:", error);
+      setError(error instanceof Error ? error.message : "保存失败，请重试");
+    } finally {
+      if (isMountedRef.current) {
+        setSaving(false);
+      }
+    }
   };
 
   if (loading) {
@@ -116,14 +239,40 @@ export default function StoryboardPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-            分镜设计
-          </h1>
-          <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-            设计您的分镜，规划每个镜头的视觉呈现
-          </p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+              分镜设计
+            </h1>
+            <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+              设计您的分镜，规划每个镜头的视觉呈现
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {saveStatus && (
+              <span className={`text-sm ${saveStatus.includes("失败") ? "text-red-500" : "text-green-500"}`}>
+                {saveStatus}
+              </span>
+            )}
+            {hasUnsavedChanges && !saving && (
+              <span className="text-xs text-amber-500 flex items-center gap-1">
+                <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                未保存
+              </span>
+            )}
+          </div>
         </div>
+
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            </div>
+          </div>
+        )}
 
         {/* Storyboard Editor */}
         {story && (
@@ -167,21 +316,47 @@ export default function StoryboardPage() {
 
         {/* Actions */}
         <div className="mt-8 flex justify-between items-center">
-          <button
-            onClick={() => router.push(`/projects/${projectId}/story`)}
-            className="px-6 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-          >
-            ← 返回故事开发
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleManualSave}
+              disabled={saving}
+              className="px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm flex items-center gap-2"
+            >
+              {saving ? (
+                <Spinner size="sm" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+              )}
+              保存
+            </button>
+            <button
+              onClick={() => router.push(`/projects/${projectId}/story`)}
+              disabled={saving}
+              className="px-5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm"
+            >
+              返回故事开发
+            </button>
+          </div>
           <button
             onClick={handleComplete}
-            disabled={shots.length === 0}
-            className="px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            disabled={saving || shots.length === 0}
+            className="px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 text-sm font-medium"
           >
-            完成并进入素材创作
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            {saving ? (
+              <>
+                <Spinner size="sm" />
+                保存中...
+              </>
+            ) : (
+              <>
+                完成并进入素材创作
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </>
+            )}
           </button>
         </div>
 
@@ -208,6 +383,23 @@ export default function StoryboardPage() {
               {shots.filter((s) => s.videoStatus === "completed").length}
             </p>
             <p className="text-sm text-zinc-500">视频完成</p>
+          </div>
+        </div>
+
+        {/* Save Info */}
+        <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-lg">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-green-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="text-sm text-green-700 dark:text-green-300">
+              <p className="font-medium mb-1">保存机制</p>
+              <ul className="space-y-1 text-xs">
+                <li>✓ <strong>自动保存</strong>：修改内容后约3秒自动保存</li>
+                <li>✓ <strong>手动保存</strong>：点击"保存"按钮立即保存</li>
+                <li>✓ <strong>完成时保存</strong>：点击"完成并进入素材创作"保存所有数据</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
