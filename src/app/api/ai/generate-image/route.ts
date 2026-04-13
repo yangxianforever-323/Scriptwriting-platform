@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const timestamp = Date.now();
     const images: string[] = [];
 
-    for (let i = 0; i &lt; count; i++) {
+    for (let i = 0; i < count; i++) {
       const generatedImages = await generateImage(prompt, {
         style,
         type,
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         n: 1,
       });
 
-      if (generatedImages.length &gt; 0) {
+      if (generatedImages.length > 0) {
         const fileName = `generated-${timestamp}-${i}.png`;
         const url = saveBase64Image(generatedImages[0], fileName);
         images.push(url);
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      images: images.map(url =&gt; ({ url })),
+      images: images.map((url) => ({ url })),
       count: images.length,
     });
   } catch (error) {
@@ -106,4 +106,3 @@ export async function GET() {
     endpoint: "/api/ai/generate-image",
   });
 }
-

@@ -24,8 +24,8 @@ export class GeminiImageApiError extends Error {
   }
 }
 
-function sleep(ms: number): Promise&lt;void&gt; {
-  return new Promise((resolve) =&gt; setTimeout(resolve, ms));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function isGeminiConfigured(): boolean {
@@ -33,7 +33,7 @@ export function isGeminiConfigured(): boolean {
 }
 
 function buildStylePrompt(style?: string, type?: "character" | "location" | "prop" | "scene"): string {
-  const basePrompts: Record&lt;string, string&gt; = {
+  const basePrompts: Record<string, string> = {
     realistic: ", photorealistic, high quality, natural lighting, sharp details, professional photography",
     anime: ", anime style, vibrant colors, clean lines, Japanese animation style",
     cartoon: ", cartoon style, bright colors, playful, exaggerated features",
@@ -46,7 +46,7 @@ function buildStylePrompt(style?: string, type?: "character" | "location" | "pro
     scifi: ", sci-fi style, futuristic, high-tech, space age, advanced technology",
   };
 
-  const typePrompts: Record&lt;string, string&gt; = {
+  const typePrompts: Record<string, string> = {
     character: ", character design, full body or portrait, detailed facial features, expressive",
     location: ", environment design, architectural details, atmospheric perspective, immersive background",
     prop: ", object photography, product shot, detailed texture, studio lighting, centered composition",
@@ -55,7 +55,7 @@ function buildStylePrompt(style?: string, type?: "character" | "location" | "pro
 
   let result = basePrompts[style ?? "realistic"] || basePrompts.realistic;
 
-  if (type &amp;&amp; typePrompts[type]) {
+  if (type && typePrompts[type]) {
     result += typePrompts[type];
   }
 
@@ -87,7 +87,7 @@ function calculateSize(aspectRatio?: string, resolution?: string) {
     }
   }
 
-  if (aspectRatio &amp;&amp; aspectRatio !== "custom") {
+  if (aspectRatio && aspectRatio !== "custom") {
     switch (aspectRatio) {
       case "1:1":
         height = width;
@@ -95,11 +95,12 @@ function calculateSize(aspectRatio?: string, resolution?: string) {
       case "16:9":
         height = Math.round(width * 9 / 16);
         break;
-      case "9:16":
+      case "9:16": {
         const tempHeight = height;
         height = width;
         width = tempHeight;
         break;
+      }
       case "4:3":
         height = Math.round(width * 3 / 4);
         break;
@@ -120,7 +121,7 @@ export async function generateImage(
     model?: string;
     referenceImages?: string[];
   } = {}
-): Promise&lt;string[]&gt; {
+): Promise<string[]> {
   if (!isGeminiConfigured()) {
     throw new GeminiImageApiError("Image generation is not configured. Please set GEMINI_API_KEY.");
   }
@@ -137,11 +138,11 @@ export async function generateImage(
   });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() =&gt; controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   let lastError: Error | null = null;
 
-  for (let attempt = 1; attempt &lt;= MAX_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const messages: any[] = [];
 
@@ -160,8 +161,8 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
 
       const userContent: any[] = [];
 
-      if (options.referenceImages &amp;&amp; options.referenceImages.length &gt; 0) {
-        options.referenceImages.forEach((img) =&gt; {
+      if (options.referenceImages && options.referenceImages.length > 0) {
+        options.referenceImages.forEach((img) => {
           userContent.push({
             type: "image_url",
             image_url: { url: img },
@@ -222,18 +223,18 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
       }
 
       const base64Match = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
-      if (base64Match &amp;&amp; images.length === 0) {
+      if (base64Match && images.length === 0) {
         images.push(base64Match[0]);
       }
 
       const pureBase64Match = content.match(/^[A-Za-z0-9+/=]{100,}/);
-      if (pureBase64Match &amp;&amp; images.length === 0) {
+      if (pureBase64Match && images.length === 0) {
         images.push(`data:image/png;base64,${pureBase64Match[0]}`);
       }
 
       if (images.length === 0) {
         console.log("Response content:", content.slice(0, 500));
-        if (attempt &lt; MAX_RETRIES) {
+        if (attempt < MAX_RETRIES) {
           console.warn(`Attempt ${attempt} returned text instead of image, retrying...`);
           await sleep(RETRY_DELAY_MS * attempt);
           continue;
@@ -245,7 +246,7 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Unknown error");
 
-      if (error instanceof GeminiImageApiError &amp;&amp; (
+      if (error instanceof GeminiImageApiError && (
         error.statusCode === 401 ||
         error.statusCode === 403 ||
         error.errorCode === "authentication_error"
@@ -259,7 +260,7 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
         throw new GeminiImageApiError("Request timed out");
       }
 
-      if (attempt &lt; MAX_RETRIES) {
+      if (attempt < MAX_RETRIES) {
         console.warn(`Image API attempt ${attempt} failed, retrying...`, error);
         await sleep(RETRY_DELAY_MS * attempt);
       }
@@ -282,9 +283,9 @@ export async function generateCharacterImages(
     aspectRatio?: string;
     resolution?: string;
   } = {}
-): Promise&lt;Array&lt;{ view: string; imageData: string }&gt;&gt; {
+): Promise<Array<{ view: string; imageData: string }>> {
   const views = options.views || ["front"];
-  const viewDescriptions: Record&lt;string, string&gt; = {
+  const viewDescriptions: Record<string, string> = {
     front: "正面全身像，直视镜头，完整展示角色外观和服装",
     side: "侧面全身像，展示角色轮廓和侧面特征",
     back: "背面全身像，展示角色背面造型和服装细节",
@@ -292,7 +293,7 @@ export async function generateCharacterImages(
     close_up: "面部特写，详细展示角色五官、表情和神态特征",
   };
 
-  const results: Array&lt;{ view: string; imageData: string }&gt; = [];
+  const results: Array<{ view: string; imageData: string }> = [];
 
   for (const view of views) {
     const viewDesc = viewDescriptions[view] || view;
@@ -332,7 +333,7 @@ export async function generateLocationImage(
     aspectRatio?: string;
     resolution?: string;
   } = {}
-): Promise&lt;string&gt; {
+): Promise<string> {
   const prompt = `场景名称：${locationName}
 环境描述：${description}
 ${atmosphere ? `氛围特点：${atmosphere}\n` : ""}高质量场景设计图，用于影视制作参考，展示完整的空间布局和环境细节`;
@@ -356,7 +357,7 @@ export async function generatePropImage(
     aspectRatio?: string;
     resolution?: string;
   } = {}
-): Promise&lt;string&gt; {
+): Promise<string> {
   const prompt = `道具名称：${propName}
 道具描述：${description}
 ${importance ? `重要程度/用途：${importance}\n` : ""}高质量道具设计图，用于影视制作参考，清晰展示道具的材质、形状和细节`;
@@ -383,10 +384,10 @@ export async function generateSceneImage(
     aspectRatio?: string;
     resolution?: string;
   } = {}
-): Promise&lt;string&gt; {
+): Promise<string> {
   let prompt = sceneDescription;
 
-  if (characters &amp;&amp; characters.length &gt; 0) {
+  if (characters && characters.length > 0) {
     prompt += `\n场景中的角色：${characters.join("、")}`;
   }
 
@@ -394,7 +395,7 @@ export async function generateSceneImage(
     prompt += `\n场景地点：${location}`;
   }
 
-  if (props &amp;&amp; props.length &gt; 0) {
+  if (props && props.length > 0) {
     prompt += `\n场景中的道具：${props.join("、")}`;
   }
 
@@ -403,7 +404,7 @@ export async function generateSceneImage(
   }
 
   if (options.shotType) {
-    const shotTypes: Record&lt;string, string&gt; = {
+    const shotTypes: Record<string, string> = {
       EWS: "极远景，展示宏大环境和空间关系",
       LS: "远景，建立场景环境",
       FS: "全景，展示人物与环境的关系",
@@ -435,7 +436,6 @@ export async function regenerateImage(
     aspectRatio?: string;
     resolution?: string;
   } = {}
-): Promise&lt;string[]&gt; {
+): Promise<string[]> {
   return generateImage(prompt, options);
 }
-
