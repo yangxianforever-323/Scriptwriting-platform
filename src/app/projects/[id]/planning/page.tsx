@@ -4,12 +4,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
-import { Tooltip } from "@/components/ui/Tooltip";
 import { PlanningTabs } from "./components/PlanningTabs";
-import { ManualPlanningTab } from "./tabs/ManualPlanningTab";
 import { NovelImportTab } from "./tabs/NovelImportTab";
 import { AIAssistTab } from "./tabs/AIAssistTab";
-import { savePlanningData, createAutoSave, formatSaveStatus } from "@/lib/save-utils";
 import type { Project } from "@/types/database";
 
 interface NovelAnalysisResult {
@@ -54,40 +51,12 @@ export default function PlanningPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"manual" | "novel" | "ai">("manual");
+  const [activeTab, setActiveTab] = useState<"novel" | "ai">("novel");
   const [error, setError] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
-  const [logline, setLogline] = useState("");
-  const [synopsis, setSynopsis] = useState("");
-  const [genre, setGenre] = useState("");
-  const [targetDuration, setTargetDuration] = useState<number>(60);
-
-  const autoSaveRef = useRef<ReturnType<typeof createAutoSave> | null>(null);
-  const lastDataRef = useRef({ logline: "", synopsis: "", genre: "", targetDuration: 60 });
 
   useEffect(() => {
     fetchProject();
   }, [projectId]);
-
-  useEffect(() => {
-    autoSaveRef.current = createAutoSave(async () => {
-      const result = await savePlanningData(projectId, {
-        logline,
-        synopsis,
-        genre,
-        targetDuration,
-      });
-      if (!result.success) {
-        setError(result.error || "自动保存失败");
-      }
-    }, 3000);
-
-    return () => {
-      autoSaveRef.current?.cancel();
-    };
-  }, [projectId, logline, synopsis, genre, targetDuration]);
 
   const fetchProject = async () => {
     try {
@@ -95,21 +64,6 @@ export default function PlanningPage() {
       if (!response.ok) throw new Error("Failed to fetch project");
       const data = await response.json();
       setProject(data.project);
-
-      const progress = data.project.stage_progress;
-      if (progress?.planning?.data) {
-        setLogline(progress.planning.data.logline || "");
-        setSynopsis(progress.planning.data.synopsis || "");
-        setGenre(progress.planning.data.genre || "");
-        setTargetDuration(progress.planning.data.targetDuration || 60);
-        lastDataRef.current = {
-          logline: progress.planning.data.logline || "",
-          synopsis: progress.planning.data.synopsis || "",
-          genre: progress.planning.data.genre || "",
-          targetDuration: progress.planning.data.targetDuration || 60,
-        };
-      }
-      setSaveStatus("已加载");
     } catch (error) {
       console.error("Error fetching project:", error);
     } finally {
@@ -117,95 +71,7 @@ export default function PlanningPage() {
     }
   };
 
-  const handleFieldChange = useCallback((setter: (value: any) => void, value: any) => {
-    setter(value);
-    setHasUnsavedChanges(true);
-    autoSaveRef.current?.trigger();
-  }, []);
-
-  const handleManualSave = async () => {
-    setSaving(true);
-    setError(null);
-    setSaveStatus("保存中...");
-
-    try {
-      const result = await savePlanningData(projectId, {
-        logline,
-        synopsis,
-        genre,
-        targetDuration,
-      });
-
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-
-      lastDataRef.current = { logline, synopsis, genre, targetDuration };
-      setHasUnsavedChanges(false);
-      setSaveStatus("已保存");
-
-      setTimeout(() => setSaveStatus(""), 2000);
-    } catch (error) {
-      console.error("Error saving:", error);
-      setError("保存失败，请重试");
-      setSaveStatus("");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveAndContinue = async () => {
-    setSaving(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stage_progress: {
-            ...project?.stage_progress,
-            planning: {
-              status: "completed",
-              completedAt: new Date().toISOString(),
-              data: {
-                logline,
-                synopsis,
-                genre,
-                targetDuration,
-              },
-            },
-          },
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to save");
-
-      await fetch(`/api/projects/${projectId}/stage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stage: "planning",
-          status: "completed",
-        }),
-      });
-
-      await new Promise(resolve => setTimeout(resolve, 300));
-      router.push(`/projects/${projectId}/story`);
-    } catch (error) {
-      console.error("Error saving:", error);
-      setError("保存失败，请重试");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleNovelAnalysisComplete = async (result: NovelAnalysisResult) => {
-    setLogline(result.logline);
-    setSynopsis(result.synopsis);
-    setGenre(result.genre);
-    setTargetDuration(result.targetDuration);
-
     try {
       console.log("Saving analysis data...");
       sessionStorage.setItem(`analysis_${projectId}`, JSON.stringify(result));
@@ -304,19 +170,6 @@ export default function PlanningPage() {
                 选择您喜欢的方式开始创作
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              {saveStatus && (
-                <span className={`text-sm ${saveStatus.includes("失败") ? "text-red-500" : "text-green-500"}`}>
-                  {saveStatus}
-                </span>
-              )}
-              {hasUnsavedChanges && !saving && (
-                <span className="text-xs text-amber-500 flex items-center gap-1">
-                  <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                  未保存
-                </span>
-              )}
-            </div>
           </div>
 
           {error && (
@@ -333,99 +186,39 @@ export default function PlanningPage() {
           <div className="px-6 pt-4">
             <PlanningTabs
               activeTab={activeTab}
-              onTabChange={(tabId) => setActiveTab(tabId as "manual" | "novel" | "ai")}
+              onTabChange={(tabId) => setActiveTab(tabId as "novel" | "ai")}
             />
           </div>
 
           <div className="p-6">
-            {activeTab === "manual" && (
-              <ManualPlanningTab
-                logline={logline}
-                synopsis={synopsis}
-                genre={genre}
-                targetDuration={targetDuration}
-                onLoglineChange={(v) => handleFieldChange(setLogline, v)}
-                onSynopsisChange={(v) => handleFieldChange(setSynopsis, v)}
-                onGenreChange={(v) => handleFieldChange(setGenre, v)}
-                onTargetDurationChange={(v) => handleFieldChange(setTargetDuration, v)}
-              />
-            )}
-
             {activeTab === "novel" && (
               <NovelImportTab onAnalysisComplete={handleNovelAnalysisComplete} />
             )}
 
             {activeTab === "ai" && (
               <AIAssistTab
-                logline={logline}
-                synopsis={synopsis}
-                genre={genre}
-                onLoglineChange={(v) => handleFieldChange(setLogline, v)}
-                onSynopsisChange={(v) => handleFieldChange(setSynopsis, v)}
-                onGenreChange={(v) => handleFieldChange(setGenre, v)}
+                logline=""
+                synopsis=""
+                genre=""
+                onLoglineChange={() => {}}
+                onSynopsisChange={() => {}}
+                onGenreChange={() => {}}
               />
             )}
           </div>
-
-          {activeTab !== "novel" && (
-            <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
-              <button
-                onClick={handleManualSave}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm flex items-center gap-2"
-              >
-                {saving ? (
-                  <Spinner size="sm" />
-                ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-                )}
-                保存
-              </button>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => router.push(`/projects/${projectId}`)}
-                  className="px-5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm"
-                >
-                  返回项目
-                </button>
-                <button
-                  onClick={handleSaveAndContinue}
-                  disabled={saving || !logline.trim()}
-                  className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 text-sm font-medium"
-                >
-                  {saving ? (
-                    <>
-                      <Spinner size="sm" />
-                      保存中...
-                    </>
-                  ) : (
-                    <>
-                      完成并进入故事开发
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="mt-6 p-4 bg-zinc-100 dark:bg-zinc-800/50 rounded-lg">
+        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 rounded-lg">
           <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-zinc-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 text-blue-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <div className="text-sm text-zinc-500 dark:text-zinc-400">
-              <p className="font-medium text-zinc-600 dark:text-zinc-300 mb-1">提示</p>
+            <div className="text-sm text-blue-700 dark:text-blue-300">
+              <p className="font-medium mb-1">创作方式说明</p>
               <ul className="space-y-1 text-xs">
-                <li>• <strong>手动规划</strong>：适合已有明确创意的项目</li>
-                <li>• <strong>小说导入</strong>：上传小说文件，AI 自动分析提取角色、场景、情节</li>
-                <li>• <strong>AI 辅助</strong>：输入关键词或选择类型，AI 生成创意建议</li>
-                <li className="text-green-600 dark:text-green-400 mt-2">✓ 数据自动保存，修改后约3秒自动保存</li>
+                <li>• <strong>小说导入</strong>：上传小说文件，AI 自动分析提取角色、场景、情节、道具等信息</li>
+                <li>• <strong>AI 辅助</strong>：输入关键词或选择类型，AI 生成创意建议和故事框架</li>
+                <li className="text-green-600 dark:text-green-400 mt-2">✓ 分析完成后自动保存数据并进入结果确认页面</li>
               </ul>
             </div>
           </div>
