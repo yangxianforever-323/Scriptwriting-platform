@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import type { Storyboard, Shot } from "@/types/storyboard";
-import { storyboardDb, shotDb } from "@/lib/db/storyboard";
 import { Spinner } from "@/components/ui/Spinner";
 
 interface VersionManagerProps {
@@ -27,49 +26,88 @@ export function VersionManager({
     loadStoryboards();
   }, [projectId]);
 
-  const loadStoryboards = () => {
-    const boards = storyboardDb.getByProjectId(projectId);
-    setStoryboards(boards);
-    setLoading(false);
-  };
-
-  const handleCreateVersion = () => {
-    if (!newVersionName.trim()) return;
-
-    setIsCreating(true);
-    const newStoryboard = storyboardDb.create(projectId, {
-      name: newVersionName,
-      description: `创建于 ${new Date().toLocaleDateString("zh-CN")}`,
-    });
-
-    setStoryboards([newStoryboard, ...storyboards]);
-    setNewVersionName("");
-    setIsCreating(false);
-  };
-
-  const handleDuplicateVersion = (storyboardId: string) => {
-    const duplicated = storyboardDb.duplicate(storyboardId);
-    if (duplicated) {
-      loadStoryboards();
+  const loadStoryboards = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/storyboards`);
+      if (res.ok) {
+        const data: Storyboard[] = await res.json();
+        setStoryboards(data);
+      }
+    } catch (e) {
+      console.error("Failed to load storyboards", e);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleDeleteVersion = (storyboardId: string) => {
+  const handleCreateVersion = async () => {
+    if (!newVersionName.trim()) return;
+
+    setIsCreating(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/storyboards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newVersionName,
+          description: `创建于 ${new Date().toLocaleDateString("zh-CN")}`,
+        }),
+      });
+      if (res.ok) {
+        setNewVersionName("");
+        await loadStoryboards();
+      }
+    } catch (e) {
+      console.error("Failed to create storyboard version", e);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleDuplicateVersion = async (storyboardId: string) => {
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/storyboards/${storyboardId}/duplicate`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        await loadStoryboards();
+      }
+    } catch (e) {
+      console.error("Failed to duplicate storyboard", e);
+    }
+  };
+
+  const handleDeleteVersion = async (storyboardId: string) => {
     if (storyboards.length <= 1) {
       alert("至少保留一个版本");
       return;
     }
     if (!confirm("确定要删除这个版本吗？此操作不可恢复。")) return;
 
-    storyboardDb.delete(storyboardId);
-    loadStoryboards();
+    try {
+      await fetch(`/api/projects/${projectId}/storyboards/${storyboardId}`, {
+        method: "DELETE",
+      });
+      await loadStoryboards();
+    } catch (e) {
+      console.error("Failed to delete storyboard", e);
+    }
   };
 
-  const handleSwitchVersion = (storyboardId: string) => {
-    const activated = storyboardDb.setActive(storyboardId);
-    if (activated) {
-      const shots = shotDb.getByStoryboardId(activated.id);
-      onSwitchVersion(activated, shots);
+  const handleSwitchVersion = async (storyboardId: string) => {
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/storyboards/${storyboardId}/activate`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        onSwitchVersion(data.storyboard, data.shots);
+      }
+    } catch (e) {
+      console.error("Failed to switch storyboard version", e);
     }
   };
 

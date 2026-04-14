@@ -3,45 +3,55 @@
 import { useState, useEffect } from "react";
 import type { Shot } from "@/types/storyboard";
 import type { Story, Character, Location } from "@/types/story";
-import { shotDb } from "@/lib/db/storyboard";
 import { shotTypes, cameraMovements, cameraAngles, depthOfField, compositions, lightingTypes } from "@/lib/shot-language";
 import { generateImagePrompt, generateVideoPrompt, STYLE_PRESETS } from "@/lib/prompt-generation";
-import { characterDb, locationDb } from "@/lib/db/story";
 
 interface ShotEditorProps {
   shot: Shot | null;
   story: Story | null;
+  projectId: string;
   onUpdate: (shot: Shot) => void;
   onEditFull?: () => void;
 }
 
-export function ShotEditor({ shot, story, onUpdate, onEditFull }: ShotEditorProps) {
+export function ShotEditor({ shot, story, projectId, onUpdate, onEditFull }: ShotEditorProps) {
   const [activeTab, setActiveTab] = useState<"basic" | "visual" | "lighting" | "composition" | "performance" | "prompt">("basic");
   const [localShot, setLocalShot] = useState<Shot | null>(shot);
   const [selectedStyle, setSelectedStyle] = useState<string>("");
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
 
   useEffect(() => {
     setLocalShot(shot);
   }, [shot]);
 
-  const characters = story ? characterDb.getByProjectId(story.projectId) : [];
-  const locations = story ? locationDb.getByProjectId(story.projectId) : [];
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${projectId}/characters`)
+      .then((r) => r.json())
+      .then(setCharacters)
+      .catch(() => {});
+    fetch(`/api/projects/${projectId}/locations`)
+      .then((r) => r.json())
+      .then(setLocations)
+      .catch(() => {});
+  }, [projectId]);
 
   const generatePrompt = () => {
     const shotLocation = locations.find(l => l.id === localShot?.locationId);
     const shotCharacters = characters.filter(c => localShot?.characterIds?.includes(c.id));
-    
+
     const imagePrompt = generateImagePrompt(localShot!, shotCharacters, shotLocation, {
       style: selectedStyle,
       aspectRatio: "16:9",
       quality: "high",
     });
-    
+
     const videoPrompt = generateVideoPrompt(localShot!, shotCharacters, shotLocation, {
       style: selectedStyle,
       aspectRatio: "16:9",
     });
-    
+
     handleUpdate({
       imagePrompt,
       videoPrompt,
@@ -71,12 +81,21 @@ export function ShotEditor({ shot, story, onUpdate, onEditFull }: ShotEditorProp
     );
   }
 
-  const handleUpdate = (updates: Partial<Shot>) => {
+  const handleUpdate = async (updates: Partial<Shot>) => {
     const updated = { ...localShot, ...updates };
     setLocalShot(updated);
-    const saved = shotDb.update(localShot.id, updates);
-    if (saved) {
-      onUpdate(saved);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/shots/${localShot.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const saved: Shot = await res.json();
+        onUpdate(saved);
+      }
+    } catch (e) {
+      console.error("Failed to update shot", e);
     }
   };
 
@@ -85,9 +104,9 @@ export function ShotEditor({ shot, story, onUpdate, onEditFull }: ShotEditorProp
       alert("请先生成提示词");
       return;
     }
-    
+
     handleUpdate({ imageStatus: "generating" });
-    
+
     try {
       const response = await fetch("/api/generate/shot-image", {
         method: "POST",
@@ -104,7 +123,7 @@ export function ShotEditor({ shot, story, onUpdate, onEditFull }: ShotEditorProp
       }
 
       const result = await response.json();
-      
+
       handleUpdate({
         imageStatus: "completed",
         imageUrl: result.imageUrl,
@@ -121,9 +140,9 @@ export function ShotEditor({ shot, story, onUpdate, onEditFull }: ShotEditorProp
       alert("请先生成提示词");
       return;
     }
-    
+
     handleUpdate({ videoStatus: "generating" });
-    
+
     try {
       const response = await fetch("/api/generate/shot-video", {
         method: "POST",
@@ -140,7 +159,7 @@ export function ShotEditor({ shot, story, onUpdate, onEditFull }: ShotEditorProp
       }
 
       const result = await response.json();
-      
+
       handleUpdate({
         videoStatus: "completed",
         videoUrl: result.videoUrl,

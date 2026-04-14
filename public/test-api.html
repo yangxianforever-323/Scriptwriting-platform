@@ -1,0 +1,70 @@
+
+&lt;!DOCTYPE html&gt;
+&lt;html lang="zh-CN"&gt;
+&lt;head&gt;
+    &lt;meta charset="UTF-8"&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+    &lt;title&gt;API 测试&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;h1&gt;图片生成 API 测试&lt;/h1&gt;
+    
+    &lt;div&gt;
+        &lt;h2&gt;测试 1: 获取 API 状态&lt;/h2&gt;
+        &lt;button onclick="testApiStatus()"&gt;测试状态&lt;/button&gt;
+        &lt;pre id="status-result"&gt;&lt;/pre&gt;
+    &lt;/div&gt;
+    
+    &lt;div&gt;
+        &lt;h2&gt;测试 2: 生成测试图片&lt;/h2&gt;
+        &lt;button onclick="testImageGeneration()"&gt;生成测试图片&lt;/button&gt;
+        &lt;div id="image-result"&gt;&lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;script&gt;
+        async function testApiStatus() {
+            try {
+                const response = await fetch('/api/ai/generate-image');
+                const data = await response.json();
+                document.getElementById('status-result').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('status-result').textContent = '错误: ' + error.message;
+            }
+        }
+
+        async function testImageGeneration() {
+            try {
+                const response = await fetch('/api/ai/generate-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: "general",
+                        prompt: "一只可爱的卡通猫",
+                        style: "cartoon"
+                    })
+                });
+                
+                const resultDiv = document.getElementById('image-result');
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    resultDiv.innerHTML = '&lt;p style="color:red"&gt;错误: ' + JSON.stringify(error) + '&lt;/p&gt;';
+                    return;
+                }
+
+                const data = await response.json();
+                resultDiv.innerHTML = '&lt;p&gt;成功！&lt;/p&gt;&lt;pre&gt;' + JSON.stringify(data, null, 2) + '&lt;/pre&gt;';
+                
+                if (data.images &amp;&amp; data.images.length &gt; 0) {
+                    resultDiv.innerHTML += '&lt;img src="' + data.images[0].url + '" style="max-width:400px"/&gt;';
+                } else if (data.url) {
+                    resultDiv.innerHTML += '&lt;img src="' + data.url + '" style="max-width:400px"/&gt;';
+                }
+            } catch (error) {
+                document.getElementById('image-result').innerHTML = '&lt;p style="color:red"&gt;错误: ' + error.message + '&lt;/p&gt;';
+            }
+        }
+    &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+

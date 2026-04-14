@@ -150,7 +150,7 @@ export function StageNavigator({ project, currentStage }: StageNavigatorProps) {
         </div>
       </div>
 
-      {/* Current Stage Info */}
+      {/* Current Stage Info + Asset Library shortcut */}
       {currentStage && (
         <div className="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center justify-between">
@@ -160,7 +160,17 @@ export function StageNavigator({ project, currentStage }: StageNavigatorProps) {
                 {STAGES.find((s) => s.id === currentStage)?.label}
               </h2>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              {/* Asset Library shortcut */}
+              <button
+                onClick={() => router.push(`/projects/${project.id}/assets`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 hover:bg-purple-200 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-400 rounded-lg transition-colors font-medium"
+                title="素材库"
+              >
+                <span>🗂️</span>
+                <span>素材库</span>
+              </button>
+
               {stageProgress[currentStage]?.status === "completed" ? (
                 <span className="px-3 py-1 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
                   已完成

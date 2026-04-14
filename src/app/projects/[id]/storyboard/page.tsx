@@ -5,8 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
-import { storyboardDb, shotDb } from "@/lib/db/storyboard";
-import { storyDb } from "@/lib/db/story";
 import { saveStageProgress, createAutoSave } from "@/lib/save-utils";
 import type { Project } from "@/types/database";
 import type { Storyboard, Shot } from "@/types/storyboard";
@@ -29,25 +27,25 @@ export default function StoryboardPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const autoSaveRef = useRef<ReturnType<typeof createAutoSave> | null>(null);
+  const storyboardRef = useRef<Storyboard | null>(null);
+  const shotsRef = useRef<Shot[]>([]);
   const isMountedRef = useRef(false);
+
+  useEffect(() => { storyboardRef.current = storyboard; }, [storyboard]);
+  useEffect(() => { shotsRef.current = shots; }, [shots]);
 
   useEffect(() => {
     isMountedRef.current = true;
     loadData();
-
-    return () => {
-      isMountedRef.current = false;
-    };
+    return () => { isMountedRef.current = false; };
   }, [projectId]);
 
   useEffect(() => {
-    if (!storyboard || shots.length === 0) return;
+    if (!storyboard) return;
 
     autoSaveRef.current = createAutoSave(async () => {
-      const currentBoard = storyboardDb.getByProjectId(projectId);
+      const currentBoard = storyboardRef.current;
       if (!currentBoard) return;
-
-      const allShots = shotDb.getByStoryboardId(currentBoard.id);
 
       const result = await saveStageProgress({
         projectId,
@@ -55,7 +53,7 @@ export default function StoryboardPage() {
         status: "in_progress",
         data: {
           storyboardId: currentBoard.id,
-          shotsCount: allShots.length,
+          shotsCount: shotsRef.current.length,
           updatedAt: new Date().toISOString(),
         },
       });
@@ -65,10 +63,8 @@ export default function StoryboardPage() {
       }
     }, 3000);
 
-    return () => {
-      autoSaveRef.current?.cancel();
-    };
-  }, [projectId, storyboard?.id, shots.length]);
+    return () => { autoSaveRef.current?.cancel(); };
+  }, [projectId, storyboard?.id]);
 
   const loadData = async () => {
     try {
@@ -77,36 +73,34 @@ export default function StoryboardPage() {
       const data = await response.json();
       setProject(data.project);
 
-      let storyData = null;
+      // Load story data from API
+      let storyData: Story | null = null;
       try {
         const storyResponse = await fetch(`/api/projects/${projectId}/story-data`);
         if (storyResponse.ok) {
           const storyResult = await storyResponse.json();
           if (storyResult.story) {
-            storyData = storyResult.story;
-            if (storyResult.characters) storyData.characters = storyResult.characters;
-            if (storyResult.locations) storyData.locations = storyResult.locations;
-            if (storyResult.props) storyData.props = storyResult.props;
-            if (storyResult.acts) storyData.acts = storyResult.acts;
+            storyData = {
+              ...storyResult.story,
+              characters: storyResult.characters || [],
+              locations: storyResult.locations || [],
+              props: storyResult.props || [],
+              acts: storyResult.acts || [],
+            };
           }
         }
       } catch (e) {
         console.log("Story data not available from API");
       }
-
       setStory(storyData);
 
-      let activeBoard = storyboardDb.getActiveByProjectId(projectId);
-      if (!activeBoard) {
-        activeBoard = storyboardDb.create(projectId, {
-          name: "版本 1",
-          description: "默认分镜板",
-        });
-      }
-      setStoryboard(activeBoard);
+      // Load storyboard via API — server creates one if none exists
+      const boardResponse = await fetch(`/api/projects/${projectId}/storyboard-data`);
+      if (!boardResponse.ok) throw new Error("Failed to fetch storyboard");
+      const boardData = await boardResponse.json();
 
-      const shotList = shotDb.getByStoryboardId(activeBoard.id);
-      setShots(shotList);
+      setStoryboard(boardData.storyboard);
+      setShots(boardData.shots || []);
       setSaveStatus("已加载");
     } catch (error) {
       console.error("Error loading data:", error);
@@ -130,18 +124,13 @@ export default function StoryboardPage() {
     setSaveStatus("保存中...");
 
     try {
-      const currentBoard = storyboardDb.getByProjectId(projectId);
-      if (!currentBoard) throw new Error("Storyboard not found");
-
-      const allShots = shotDb.getByStoryboardId(currentBoard.id);
-
       const result = await saveStageProgress({
         projectId,
         stage: "storyboard",
         status: "in_progress",
         data: {
-          storyboardId: currentBoard.id,
-          shotsCount: allShots.length,
+          storyboardId: storyboard.id,
+          shotsCount: shots.length,
           updatedAt: new Date().toISOString(),
         },
       });
@@ -154,18 +143,14 @@ export default function StoryboardPage() {
       setSaveStatus("已保存");
 
       setTimeout(() => {
-        if (isMountedRef.current) {
-          setSaveStatus("");
-        }
+        if (isMountedRef.current) setSaveStatus("");
       }, 2000);
     } catch (error) {
       console.error("Error saving:", error);
       setError("保存失败，请重试");
       setSaveStatus("");
     } finally {
-      if (isMountedRef.current) {
-        setSaving(false);
-      }
+      if (isMountedRef.current) setSaving(false);
     }
   };
 
@@ -176,18 +161,13 @@ export default function StoryboardPage() {
     setError(null);
 
     try {
-      const currentBoard = storyboardDb.getByProjectId(projectId);
-      if (!currentBoard) throw new Error("Storyboard not found");
-
-      const allShots = shotDb.getByStoryboardId(currentBoard.id);
-
       await saveStageProgress({
         projectId,
         stage: "storyboard",
         status: "completed",
         data: {
-          storyboardId: currentBoard.id,
-          shotsCount: allShots.length,
+          storyboardId: storyboard.id,
+          shotsCount: shots.length,
           completedAt: new Date().toISOString(),
         },
       });
@@ -198,10 +178,7 @@ export default function StoryboardPage() {
         body: JSON.stringify({
           stage: "storyboard",
           status: "completed",
-          data: {
-            shotsCount: allShots.length,
-            versionsCount: storyboardDb.getByProjectId(projectId).length,
-          },
+          data: { shotsCount: shots.length },
         }),
       });
 
@@ -211,9 +188,7 @@ export default function StoryboardPage() {
       console.error("Error completing storyboard:", error);
       setError(error instanceof Error ? error.message : "保存失败，请重试");
     } finally {
-      if (isMountedRef.current) {
-        setSaving(false);
-      }
+      if (isMountedRef.current) setSaving(false);
     }
   };
 

@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
-import { storyboardDb, shotDb } from "@/lib/db/storyboard";
 import type { Project } from "@/types/database";
 import type { Storyboard, Shot } from "@/types/storyboard";
 import { ProductionToolbar } from "./components/ProductionToolbar";
@@ -37,11 +36,11 @@ export default function ProductionPage() {
       const data = await response.json();
       setProject(data.project);
 
-      const activeBoard = storyboardDb.getActiveByProjectId(projectId);
-      if (activeBoard) {
-        setStoryboard(activeBoard);
-        const shotList = shotDb.getByStoryboardId(activeBoard.id);
-        setShots(shotList);
+      const boardResponse = await fetch(`/api/projects/${projectId}/storyboard-data`);
+      if (boardResponse.ok) {
+        const boardData = await boardResponse.json();
+        setStoryboard(boardData.storyboard);
+        setShots(boardData.shots || []);
       }
     } catch (error) {
       console.error("Error loading data:", error);
@@ -50,12 +49,17 @@ export default function ProductionPage() {
     }
   };
 
-  const refreshShots = useCallback(() => {
-    if (storyboard) {
-      const updatedShots = shotDb.getByStoryboardId(storyboard.id);
-      setShots(updatedShots);
+  const refreshShots = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/storyboard-data`);
+      if (res.ok) {
+        const data = await res.json();
+        setShots(data.shots || []);
+      }
+    } catch (e) {
+      console.error("Failed to refresh shots", e);
     }
-  }, [storyboard]);
+  }, [projectId]);
 
   const handleSelectAll = () => {
     if (selectedShotIds.size === shots.length) {

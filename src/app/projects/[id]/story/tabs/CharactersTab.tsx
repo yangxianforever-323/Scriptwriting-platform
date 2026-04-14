@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import type { Story, Character, CharacterRole } from "@/types/story";
-import { characterDb } from "@/lib/db/story";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { AIGenerateImage } from "@/components/ai/AIGenerateImage";
@@ -22,6 +21,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [dialogTab, setDialogTab] = useState<"edit" | "ai-generate">("edit");
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<Character>>({
     name: "",
     role: "supporting",
@@ -34,37 +34,56 @@ export function CharactersTab({ story }: CharactersTabProps) {
     arc: "",
   });
 
-  const loadCharacters = () => {
-    const chars = characterDb.getByProjectId(story.projectId);
-    setCharacters(chars);
-    if (!selectedCharacter && chars.length > 0) {
-      setSelectedCharacter(chars[0]);
-      setFormData(chars[0]);
+  const loadCharacters = async () => {
+    try {
+      const res = await fetch(`/api/projects/${story.projectId}/characters`);
+      if (!res.ok) return;
+      const chars: Character[] = await res.json();
+      setCharacters(chars);
+      if (!selectedCharacter && chars.length > 0) {
+        setSelectedCharacter(chars[0]);
+        setFormData(chars[0]);
+      }
+    } catch (e) {
+      console.error("Failed to load characters", e);
     }
   };
 
   useEffect(() => {
     loadCharacters();
-    
-    const handleFocus = () => {
-      loadCharacters();
-    };
-    window.addEventListener("focus", handleFocus);
-    
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
   }, [story.projectId]);
 
-  const handleSave = () => {
-    if (selectedCharacter) {
-      characterDb.update(selectedCharacter.id, formData);
-      setSelectedCharacter({ ...selectedCharacter, ...formData });
-    } else {
-      const newChar = characterDb.create(story.projectId, formData);
-      setSelectedCharacter(newChar);
+  const handleSave = async () => {
+    if (!formData.name?.trim()) return;
+    setSaving(true);
+    try {
+      if (selectedCharacter) {
+        const res = await fetch(`/api/projects/${story.projectId}/characters/${selectedCharacter.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        if (res.ok) {
+          const updated: Character = await res.json();
+          setSelectedCharacter(updated);
+        }
+      } else {
+        const res = await fetch(`/api/projects/${story.projectId}/characters`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        if (res.ok) {
+          const newChar: Character = await res.json();
+          setSelectedCharacter(newChar);
+        }
+      }
+      await loadCharacters();
+    } catch (e) {
+      console.error("Failed to save character", e);
+    } finally {
+      setSaving(false);
     }
-    loadCharacters();
   };
 
   const handleEdit = (character: Character) => {
@@ -73,9 +92,12 @@ export function CharactersTab({ story }: CharactersTabProps) {
     setDialogTab("edit");
   };
 
-  const handleDelete = (characterId: string) => {
-    if (confirm("确定要删除这个角色吗？")) {
-      characterDb.delete(characterId);
+  const handleDelete = async (characterId: string) => {
+    if (!confirm("确定要删除这个角色吗？")) return;
+    try {
+      await fetch(`/api/projects/${story.projectId}/characters/${characterId}`, {
+        method: "DELETE",
+      });
       if (selectedCharacter?.id === characterId) {
         setSelectedCharacter(null);
         setFormData({
@@ -90,12 +112,14 @@ export function CharactersTab({ story }: CharactersTabProps) {
           arc: "",
         });
       }
-      loadCharacters();
+      await loadCharacters();
+    } catch (e) {
+      console.error("Failed to delete character", e);
     }
   };
 
   const handleAdd = () => {
-    const newFormData: Partial<Character> = {
+    setFormData({
       name: "",
       role: "supporting",
       age: "",
@@ -105,8 +129,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
       background: "",
       motivation: "",
       arc: "",
-    };
-    setFormData(newFormData);
+    });
     setSelectedCharacter(null);
     setDialogTab("edit");
   };
@@ -344,7 +367,8 @@ export function CharactersTab({ story }: CharactersTabProps) {
                   </div>
 
                   <div className="flex justify-end pt-4">
-                    <Button onClick={handleSave} disabled={!formData.name?.trim()}>
+                    <Button onClick={handleSave} disabled={!formData.name?.trim() || saving}>
+                      {saving ? <Spinner size="sm" /> : null}
                       保存角色信息
                     </Button>
                   </div>

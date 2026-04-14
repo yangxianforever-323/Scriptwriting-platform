@@ -14,8 +14,11 @@ import type {
   Location,
   Prop,
 } from "@/types/story";
+import type { Storyboard, Shot, ShotImageStatus, ShotVideoStatus } from "@/types/storyboard";
+import type { Asset, AssetCategory, AssetFilter } from "@/types/asset";
 
 const DATA_DIR = path.join(process.cwd(), "data");
+const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
 
 interface DataFiles {
   projects: string;
@@ -28,6 +31,9 @@ interface DataFiles {
   characters: string;
   locations: string;
   props: string;
+  storyboards: string;
+  shots: string;
+  assets: string;
 }
 
 const FILES: DataFiles = {
@@ -41,6 +47,9 @@ const FILES: DataFiles = {
   characters: path.join(DATA_DIR, "characters.json"),
   locations: path.join(DATA_DIR, "locations.json"),
   props: path.join(DATA_DIR, "props.json"),
+  storyboards: path.join(DATA_DIR, "storyboards.json"),
+  shots: path.join(DATA_DIR, "shots.json"),
+  assets: path.join(DATA_DIR, "assets.json"),
 };
 
 function ensureDataDir(): void {
@@ -502,6 +511,14 @@ export const storyStore = {
     writeJsonFile(FILES.stories, stories);
     return true;
   },
+
+  deleteByProjectId(projectId: string): boolean {
+    const stories = this.getAll();
+    const toDelete = stories.filter((s) => s.projectId === projectId);
+    if (toDelete.length === 0) return false;
+    toDelete.forEach((s) => this.delete(s.id));
+    return true;
+  },
 };
 
 // ============================================
@@ -882,6 +899,493 @@ export const propStore = {
 };
 
 // ============================================
+// Storyboards (分镜版本)
+// ============================================
+export const storyboardStore = {
+  getAll(): Storyboard[] {
+    return readJsonFile<Storyboard>(FILES.storyboards);
+  },
+
+  getById(id: string): Storyboard | null {
+    return this.getAll().find((sb) => sb.id === id) || null;
+  },
+
+  getByProjectId(projectId: string): Storyboard[] {
+    return this.getAll()
+      .filter((sb) => sb.projectId === projectId)
+      .sort((a, b) => b.version - a.version);
+  },
+
+  getActiveByProjectId(projectId: string): Storyboard | null {
+    return this.getAll().find((sb) => sb.projectId === projectId && sb.isActive) || null;
+  },
+
+  create(projectId: string, data: Partial<Storyboard> = {}): Storyboard {
+    const storyboards = this.getAll();
+    const now = new Date().toISOString();
+
+    // Deactivate existing storyboards for this project
+    storyboards.forEach((sb) => {
+      if (sb.projectId === projectId) sb.isActive = false;
+    });
+
+    const projectBoards = storyboards.filter((sb) => sb.projectId === projectId);
+    const nextVersion =
+      projectBoards.length > 0
+        ? Math.max(...projectBoards.map((sb) => sb.version)) + 1
+        : 1;
+
+    const storyboard: Storyboard = {
+      id: generateId(),
+      projectId,
+      storyId: data.storyId,
+      name: data.name || `版本 ${nextVersion}`,
+      version: nextVersion,
+      isActive: true,
+      description: data.description || "",
+      shotCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    storyboards.push(storyboard);
+    writeJsonFile(FILES.storyboards, storyboards);
+    return storyboard;
+  },
+
+  update(id: string, updates: Partial<Storyboard>): Storyboard | null {
+    const storyboards = this.getAll();
+    const index = storyboards.findIndex((sb) => sb.id === id);
+    if (index === -1) return null;
+
+    storyboards[index] = { ...storyboards[index], ...updates, updatedAt: new Date().toISOString() };
+    writeJsonFile(FILES.storyboards, storyboards);
+    return storyboards[index];
+  },
+
+  setActive(id: string): Storyboard | null {
+    const storyboards = this.getAll();
+    const target = storyboards.find((sb) => sb.id === id);
+    if (!target) return null;
+
+    storyboards.forEach((sb) => {
+      if (sb.projectId === target.projectId) sb.isActive = false;
+    });
+    target.isActive = true;
+    target.updatedAt = new Date().toISOString();
+
+    writeJsonFile(FILES.storyboards, storyboards);
+    return target;
+  },
+
+  delete(id: string): boolean {
+    const storyboards = this.getAll();
+    const filtered = storyboards.filter((sb) => sb.id !== id);
+    if (filtered.length === storyboards.length) return false;
+    writeJsonFile(FILES.storyboards, filtered);
+    shotStore.deleteByStoryboardId(id);
+    return true;
+  },
+
+  deleteByProjectId(projectId: string): void {
+    const toDelete = this.getAll().filter((sb) => sb.projectId === projectId);
+    toDelete.forEach((sb) => this.delete(sb.id));
+  },
+
+  duplicate(storyboardId: string, newName?: string): Storyboard | null {
+    const source = this.getById(storyboardId);
+    if (!source) return null;
+
+    const newBoard = this.create(source.projectId, {
+      name: newName || `${source.name} (复制)`,
+      description: source.description,
+      storyId: source.storyId,
+    });
+
+    // Copy shots
+    const sourceShots = shotStore.getByStoryboardId(storyboardId);
+    sourceShots.forEach((shot) => {
+      shotStore.create(newBoard.id, {
+        ...shot,
+        imageUrl: undefined,
+        imageStatus: "pending",
+        videoUrl: undefined,
+        videoStatus: "pending",
+        imageVersions: [],
+      });
+    });
+
+    return newBoard;
+  },
+};
+
+// ============================================
+// Shots (分镜帧)
+// ============================================
+export const shotStore = {
+  getAll(): Shot[] {
+    return readJsonFile<Shot>(FILES.shots);
+  },
+
+  getById(id: string): Shot | null {
+    return this.getAll().find((s) => s.id === id) || null;
+  },
+
+  getByStoryboardId(storyboardId: string): Shot[] {
+    return this.getAll()
+      .filter((s) => s.storyboardId === storyboardId)
+      .sort((a, b) => a.index - b.index);
+  },
+
+  create(storyboardId: string, data: Partial<Shot> = {}): Shot {
+    const shots = this.getAll();
+    const storyboardShots = shots.filter((s) => s.storyboardId === storyboardId);
+    const now = new Date().toISOString();
+
+    const shot: Shot = {
+      id: generateId(),
+      storyboardId,
+      index: data.index ?? storyboardShots.length,
+      title: data.title || `分镜 ${storyboardShots.length + 1}`,
+      description: data.description || "",
+      duration: data.duration ?? 6,
+      storySceneId: data.storySceneId,
+      actId: data.actId,
+      characterIds: data.characterIds || [],
+      locationId: data.locationId,
+      propIds: data.propIds || [],
+      imagePrompt: data.imagePrompt,
+      imageUrl: data.imageUrl,
+      imageStatus: (data.imageStatus as ShotImageStatus) || "pending",
+      imageConfirmed: data.imageConfirmed ?? false,
+      imageVersions: data.imageVersions || [],
+      videoPrompt: data.videoPrompt,
+      videoUrl: data.videoUrl,
+      videoStatus: (data.videoStatus as ShotVideoStatus) || "pending",
+      videoConfirmed: data.videoConfirmed ?? false,
+      shotType: data.shotType || "MS",
+      shotTypeName: data.shotTypeName || "中景",
+      cameraPosition: data.cameraPosition,
+      cameraMovement: data.cameraMovement,
+      cameraMovementName: data.cameraMovementName,
+      movementDetails: data.movementDetails,
+      cameraAngle: data.cameraAngle,
+      cameraAngleName: data.cameraAngleName,
+      focalLength: data.focalLength,
+      depthOfField: data.depthOfField,
+      depthOfFieldName: data.depthOfFieldName,
+      lightingType: data.lightingType,
+      lightingName: data.lightingName,
+      lightSource: data.lightSource,
+      lightPosition: data.lightPosition,
+      lightQuality: data.lightQuality,
+      colorTone: data.colorTone,
+      composition: data.composition,
+      compositionName: data.compositionName,
+      subjectPosition: data.subjectPosition,
+      foreground: data.foreground,
+      background: data.background,
+      performanceStart: data.performanceStart,
+      performanceAction: data.performanceAction,
+      performanceEnd: data.performanceEnd,
+      emotionCurve: data.emotionCurve,
+      dialogue: data.dialogue,
+      dialogueTiming: data.dialogueTiming,
+      ambientSound: data.ambientSound,
+      actionSound: data.actionSound,
+      music: data.music,
+      creativeIntent: data.creativeIntent,
+      filmReference: data.filmReference,
+      characterConsistency: data.characterConsistency,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    shots.push(shot);
+    writeJsonFile(FILES.shots, shots);
+
+    // Update storyboard shot count
+    const storyboards = readJsonFile<Storyboard>(FILES.storyboards);
+    const sbIndex = storyboards.findIndex((sb) => sb.id === storyboardId);
+    if (sbIndex !== -1) {
+      storyboards[sbIndex].shotCount = shots.filter((s) => s.storyboardId === storyboardId).length;
+      storyboards[sbIndex].updatedAt = now;
+      writeJsonFile(FILES.storyboards, storyboards);
+    }
+
+    return shot;
+  },
+
+  update(id: string, updates: Partial<Shot>): Shot | null {
+    const shots = this.getAll();
+    const index = shots.findIndex((s) => s.id === id);
+    if (index === -1) return null;
+
+    shots[index] = { ...shots[index], ...updates, updatedAt: new Date().toISOString() };
+    writeJsonFile(FILES.shots, shots);
+    return shots[index];
+  },
+
+  delete(id: string): boolean {
+    const shots = this.getAll();
+    const shot = shots.find((s) => s.id === id);
+    if (!shot) return false;
+
+    const filtered = shots.filter((s) => s.id !== id);
+    // Reorder remaining shots in same storyboard
+    filtered
+      .filter((s) => s.storyboardId === shot.storyboardId)
+      .sort((a, b) => a.index - b.index)
+      .forEach((s, idx) => { s.index = idx; });
+    writeJsonFile(FILES.shots, filtered);
+
+    // Update storyboard shot count
+    const storyboards = readJsonFile<Storyboard>(FILES.storyboards);
+    const sbIndex = storyboards.findIndex((sb) => sb.id === shot.storyboardId);
+    if (sbIndex !== -1) {
+      storyboards[sbIndex].shotCount = filtered.filter((s) => s.storyboardId === shot.storyboardId).length;
+      storyboards[sbIndex].updatedAt = new Date().toISOString();
+      writeJsonFile(FILES.storyboards, storyboards);
+    }
+    return true;
+  },
+
+  deleteByStoryboardId(storyboardId: string): void {
+    const shots = this.getAll().filter((s) => s.storyboardId !== storyboardId);
+    writeJsonFile(FILES.shots, shots);
+  },
+
+  reorder(storyboardId: string, shotIds: string[]): boolean {
+    const shots = this.getAll();
+    let updated = false;
+    shotIds.forEach((id, index) => {
+      const i = shots.findIndex((s) => s.id === id && s.storyboardId === storyboardId);
+      if (i !== -1) {
+        shots[i].index = index;
+        shots[i].updatedAt = new Date().toISOString();
+        updated = true;
+      }
+    });
+    if (updated) writeJsonFile(FILES.shots, shots);
+    return updated;
+  },
+
+  batchDelete(shotIds: string[]): number {
+    const shots = this.getAll();
+    const filtered = shots.filter((s) => !shotIds.includes(s.id));
+    const count = shots.length - filtered.length;
+    if (count > 0) writeJsonFile(FILES.shots, filtered);
+    return count;
+  },
+};
+
+// ============================================
+// Assets (素材库)
+// ============================================
+export const assetStore = {
+  getAll(): Asset[] {
+    return readJsonFile<Asset>(FILES.assets);
+  },
+
+  getById(id: string): Asset | null {
+    return this.getAll().find((a) => a.id === id) || null;
+  },
+
+  getByProjectId(projectId: string, filter?: AssetFilter): Asset[] {
+    let assets = this.getAll().filter((a) => a.projectId === projectId);
+
+    if (filter?.category) {
+      assets = assets.filter((a) => a.category === filter.category);
+    }
+    if (filter?.mediaType) {
+      assets = assets.filter((a) => a.mediaType === filter.mediaType);
+    }
+    if (filter?.source) {
+      assets = assets.filter((a) => a.source === filter.source);
+    }
+    if (filter?.linkedEntityId) {
+      assets = assets.filter((a) => a.linkedEntityId === filter.linkedEntityId);
+    }
+    if (filter?.tags && filter.tags.length > 0) {
+      assets = assets.filter((a) => filter.tags!.some((tag) => a.tags.includes(tag)));
+    }
+    if (filter?.search) {
+      const q = filter.search.toLowerCase();
+      assets = assets.filter(
+        (a) =>
+          a.name.toLowerCase().includes(q) ||
+          a.description.toLowerCase().includes(q) ||
+          a.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+
+    return assets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  },
+
+  getByCategory(projectId: string, category: AssetCategory): Asset[] {
+    return this.getByProjectId(projectId, { category });
+  },
+
+  getByLinkedEntity(entityId: string): Asset[] {
+    return this.getAll().filter((a) => a.linkedEntityId === entityId);
+  },
+
+  create(data: Omit<Asset, "id" | "createdAt" | "updatedAt">): Asset {
+    const assets = this.getAll();
+    const now = new Date().toISOString();
+
+    const asset: Asset = {
+      ...data,
+      id: generateId(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    assets.push(asset);
+    writeJsonFile(FILES.assets, assets);
+    return asset;
+  },
+
+  update(id: string, updates: Partial<Asset>): Asset | null {
+    const assets = this.getAll();
+    const index = assets.findIndex((a) => a.id === id);
+    if (index === -1) return null;
+
+    assets[index] = { ...assets[index], ...updates, updatedAt: new Date().toISOString() };
+    writeJsonFile(FILES.assets, assets);
+    return assets[index];
+  },
+
+  delete(id: string): boolean {
+    const assets = this.getAll();
+    const asset = assets.find((a) => a.id === id);
+    if (!asset) return false;
+
+    // Delete physical file
+    if (asset.storagePath) {
+      const filePath = path.join(UPLOADS_DIR, asset.storagePath);
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    }
+
+    const filtered = assets.filter((a) => a.id !== id);
+    writeJsonFile(FILES.assets, filtered);
+    return true;
+  },
+
+  deleteByProjectId(projectId: string): void {
+    const toDelete = this.getAll().filter((a) => a.projectId === projectId);
+    toDelete.forEach((a) => this.delete(a.id));
+  },
+
+  deleteByLinkedEntity(entityId: string): void {
+    const toDelete = this.getAll().filter((a) => a.linkedEntityId === entityId);
+    toDelete.forEach((a) => this.delete(a.id));
+  },
+
+  // Save a base64 image to disk and create an asset record
+  saveGeneratedImage(params: {
+    projectId: string;
+    category: AssetCategory;
+    name: string;
+    base64Data: string;
+    mimeType: string;
+    linkedEntityId?: string;
+    linkedEntityType?: Asset["linkedEntityType"];
+    generationPrompt?: string;
+    generationModel?: string;
+    tags?: string[];
+  }): Asset {
+    ensureDataDir();
+    const ext = params.mimeType.split("/")[1] || "jpg";
+    const filename = `${generateId()}.${ext}`;
+    const subDir = `generated/${params.projectId}/${params.category}`;
+    const dirPath = path.join(UPLOADS_DIR, subDir);
+
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+
+    const filePath = path.join(dirPath, filename);
+    const buffer = Buffer.from(params.base64Data, "base64");
+    fs.writeFileSync(filePath, buffer);
+
+    const storagePath = `${subDir}/${filename}`;
+    const url = `/uploads/${storagePath}`;
+
+    return this.create({
+      projectId: params.projectId,
+      category: params.category,
+      mediaType: "image",
+      source: "ai_generated",
+      filename,
+      storagePath,
+      url,
+      mimeType: params.mimeType,
+      sizeBytes: buffer.length,
+      name: params.name,
+      description: "",
+      tags: params.tags || [],
+      linkedEntityId: params.linkedEntityId,
+      linkedEntityType: params.linkedEntityType,
+      generationPrompt: params.generationPrompt,
+      generationModel: params.generationModel,
+      version: 1,
+    });
+  },
+
+  // Save an uploaded file to disk and create an asset record
+  saveUploadedFile(params: {
+    projectId: string;
+    category: AssetCategory;
+    name: string;
+    fileBuffer: Buffer;
+    filename: string;
+    mimeType: string;
+    linkedEntityId?: string;
+    linkedEntityType?: Asset["linkedEntityType"];
+    tags?: string[];
+    description?: string;
+  }): Asset {
+    ensureDataDir();
+    const ext = path.extname(params.filename) || ".bin";
+    const safeFilename = `${generateId()}${ext}`;
+    const subDir = `uploads/${params.projectId}/${params.category}`;
+    const dirPath = path.join(UPLOADS_DIR, subDir);
+
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+
+    const filePath = path.join(dirPath, safeFilename);
+    fs.writeFileSync(filePath, params.fileBuffer);
+
+    const mediaType = params.mimeType.startsWith("video/") ? "video" : "image";
+    const storagePath = `${subDir}/${safeFilename}`;
+    const url = `/uploads/${storagePath}`;
+
+    return this.create({
+      projectId: params.projectId,
+      category: params.category,
+      mediaType,
+      source: "uploaded",
+      filename: safeFilename,
+      storagePath,
+      url,
+      mimeType: params.mimeType,
+      sizeBytes: params.fileBuffer.length,
+      name: params.name,
+      description: params.description || "",
+      tags: params.tags || [],
+      linkedEntityId: params.linkedEntityId,
+      linkedEntityType: params.linkedEntityType,
+      version: 1,
+    });
+  },
+};
+
+// ============================================
 // Export unified store object
 // ============================================
 export const dataStore = {
@@ -895,6 +1399,9 @@ export const dataStore = {
   character: characterStore,
   location: locationStore,
   prop: propStore,
+  storyboard: storyboardStore,
+  shot: shotStore,
+  asset: assetStore,
 
   // Utility functions
   exportAll(): Record<string, unknown[]> {
@@ -909,6 +1416,9 @@ export const dataStore = {
       characters: this.character.getAll(),
       locations: this.location.getAll(),
       props: this.prop.getAll(),
+      storyboards: this.storyboard.getAll(),
+      shots: this.shot.getAll(),
+      assets: this.asset.getAll(),
     };
   },
 
@@ -926,6 +1436,7 @@ export const dataStore = {
       characters: this.character.getByProjectId(projectId),
       locations: this.location.getByProjectId(projectId),
       props: this.prop.getByProjectId(projectId),
+      storyboard: this.storyboard.getActiveByProjectId(projectId),
     };
   },
 };

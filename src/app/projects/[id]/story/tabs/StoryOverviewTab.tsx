@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { Story, StoryStructure } from "@/types/story";
-import { storyDb } from "@/lib/db/story";
 
 interface StoryOverviewTabProps {
   story: Story;
@@ -45,11 +44,18 @@ export function StoryOverviewTab({ story, onUpdate }: StoryOverviewTabProps) {
     targetDuration: story.targetDuration,
   });
 
-  const handleSave = () => {
-    const updated = storyDb.update(story.id, formData);
-    if (updated) {
-      onUpdate(updated);
+  const handleSave = async () => {
+    try {
+      await fetch(`/api/projects/${story.projectId}/story-data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      // Update parent with merged story
+      onUpdate({ ...story, ...formData });
       setIsEditing(false);
+    } catch (e) {
+      console.error("Failed to save story overview", e);
     }
   };
 

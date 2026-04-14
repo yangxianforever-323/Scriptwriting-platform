@@ -2,12 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { Story, Act, StoryScene } from "@/types/story";
-import { actDb, storySceneDb } from "@/lib/db/story";
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 
 interface ActsTabProps {
   story: Story;
+}
+
+interface ActWithScenes extends Act {
+  scenes: StoryScene[];
 }
 
 interface ScriptAnalysis {
@@ -23,111 +26,91 @@ interface ScriptAnalysis {
       characters?: string[];
     }[];
   }[];
-  characters: {
-    name: string;
-    description: string;
-    role: "protagonist" | "antagonist" | "supporting" | "minor";
-  }[];
-  locations: {
-    name: string;
-    description: string;
-  }[];
+  characters: { name: string; description: string; role: "protagonist" | "antagonist" | "supporting" | "minor" }[];
+  locations: { name: string; description: string }[];
 }
 
 export function ActsTab({ story }: ActsTabProps) {
-  const [acts, setActs] = useState<Act[]>([]);
-  const [selectedAct, setSelectedAct] = useState<Act | null>(null);
-  const [scenes, setScenes] = useState<StoryScene[]>([]);
+  const [acts, setActs] = useState<ActWithScenes[]>([]);
+  const [selectedAct, setSelectedAct] = useState<ActWithScenes | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scriptContent, setScriptContent] = useState("");
   const [analysisResult, setAnalysisResult] = useState<ScriptAnalysis | null>(null);
-  const [chatMessages, setChatMessages] = useState<{role: "user" | "assistant"; content: string}[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadData = () => {
-    const loadedActs = actDb.getByStoryId(story.id);
-    setActs(loadedActs);
-    if (loadedActs.length > 0) {
-      if (!selectedAct || !loadedActs.find(a => a.id === selectedAct.id)) {
-        setSelectedAct(loadedActs[0]);
-        const loadedScenes = storySceneDb.getByActId(loadedActs[0].id);
-        setScenes(loadedScenes);
+  const loadData = async () => {
+    try {
+      const res = await fetch(`/api/projects/${story.projectId}/acts`);
+      if (!res.ok) return;
+      const loadedActs: ActWithScenes[] = await res.json();
+      setActs(loadedActs);
+      if (loadedActs.length > 0) {
+        const current = selectedAct ? loadedActs.find(a => a.id === selectedAct.id) : null;
+        setSelectedAct(current ?? loadedActs[0]);
+      } else {
+        setSelectedAct(null);
       }
-    } else {
-      setSelectedAct(null);
-      setScenes([]);
+    } catch (e) {
+      console.error("Failed to load acts", e);
     }
   };
 
   useEffect(() => {
     loadData();
-    
-    const handleFocus = () => {
-      loadData();
-    };
-    window.addEventListener("focus", handleFocus);
-    
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
   }, [story.id]);
 
-  useEffect(() => {
-    if (selectedAct) {
-      const loadedScenes = storySceneDb.getByActId(selectedAct.id);
-      setScenes(loadedScenes);
-    }
-  }, [selectedAct]);
-
-  const handleSelectAct = (act: Act) => {
+  const handleSelectAct = (act: ActWithScenes) => {
     setSelectedAct(act);
-    const loadedScenes = storySceneDb.getByActId(act.id);
-    setScenes(loadedScenes);
   };
 
-  const handleAddAct = () => {
-    actDb.create(story.id, {
-      title: `第${acts.length + 1}幕`,
-    });
-    loadData();
+  const handleAddAct = async () => {
+    try {
+      const res = await fetch(`/api/projects/${story.projectId}/acts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: `第${acts.length + 1}幕` }),
+      });
+      if (res.ok) await loadData();
+    } catch (e) {
+      console.error("Failed to add act", e);
+    }
   };
 
-  const handleAddScene = () => {
+  const handleAddScene = async () => {
     if (!selectedAct) return;
-    storySceneDb.create(selectedAct.id, {
-      title: `场景${scenes.length + 1}`,
-    });
-    const loadedScenes = storySceneDb.getByActId(selectedAct.id);
-    setScenes(loadedScenes);
+    try {
+      const res = await fetch(`/api/projects/${story.projectId}/acts/${selectedAct.id}/scenes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: `场景${selectedAct.scenes.length + 1}` }),
+      });
+      if (res.ok) await loadData();
+    } catch (e) {
+      console.error("Failed to add scene", e);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const text = await file.text();
     setScriptContent(text);
   };
 
   const analyzeScript = async () => {
     if (!scriptContent.trim()) return;
-
     setIsAnalyzing(true);
     try {
       const response = await fetch("/api/ai/analyze-script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          script: scriptContent,
-          storyId: story.id,
-        }),
+        body: JSON.stringify({ script: scriptContent, storyId: story.id }),
       });
-
       if (!response.ok) throw new Error("分析失败");
-
       const result = await response.json();
       setAnalysisResult(result.analysis);
       setChatMessages([{
@@ -142,50 +125,31 @@ export function ActsTab({ story }: ActsTabProps) {
     }
   };
 
-  const applyAnalysis = () => {
+  const applyAnalysis = async () => {
     if (!analysisResult) return;
-
-    acts.forEach(act => {
-      const actScenes = storySceneDb.getByActId(act.id);
-      actScenes.forEach(scene => storySceneDb.delete(scene.id));
-      actDb.delete(act.id);
-    });
-
-    analysisResult.acts.forEach((actData, actIndex) => {
-      const newAct = actDb.create(story.id, {
-        title: actData.title,
-        description: actData.description,
-        index: actIndex,
+    try {
+      // Batch import via API
+      await fetch(`/api/projects/${story.projectId}/acts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch: true, acts: analysisResult.acts }),
       });
-
-      actData.scenes.forEach((sceneData, sceneIndex) => {
-        storySceneDb.create(newAct.id, {
-          title: sceneData.title,
-          description: sceneData.description,
-          locationId: sceneData.location,
-          timeOfDay: sceneData.timeOfDay,
-          mood: sceneData.mood,
-          index: sceneIndex,
-        });
-      });
-    });
-
-    loadData();
-
-    setIsImportDialogOpen(false);
-    setScriptContent("");
-    setAnalysisResult(null);
-    setChatMessages([]);
+      await loadData();
+      setIsImportDialogOpen(false);
+      setScriptContent("");
+      setAnalysisResult(null);
+      setChatMessages([]);
+    } catch (e) {
+      console.error("Failed to apply analysis", e);
+    }
   };
 
   const sendChatMessage = async () => {
     if (!chatInput.trim() || !analysisResult) return;
-
     const userMessage = chatInput;
     setChatMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setChatInput("");
     setIsChatLoading(true);
-
     try {
       const response = await fetch("/api/ai/chat-script", {
         method: "POST",
@@ -196,26 +160,19 @@ export function ActsTab({ story }: ActsTabProps) {
           storyId: story.id,
         }),
       });
-
       if (!response.ok) throw new Error("对话失败");
-
       const result = await response.json();
       setChatMessages(prev => [...prev, { role: "assistant", content: result.message }]);
-      if (result.updatedAnalysis) {
-        setAnalysisResult(result.updatedAnalysis);
-      }
+      if (result.updatedAnalysis) setAnalysisResult(result.updatedAnalysis);
     } catch (error) {
-      console.error("Error in chat:", error);
       setChatMessages(prev => [...prev, { role: "assistant", content: "抱歉，对话出现错误，请重试。" }]);
     } finally {
       setIsChatLoading(false);
     }
   };
 
-  const totalScenes = acts.reduce((acc, act) => {
-    const actScenes = storySceneDb.getByActId(act.id);
-    return acc + actScenes.length;
-  }, 0);
+  const totalScenes = acts.reduce((acc, act) => acc + (act.scenes?.length ?? 0), 0);
+  const currentScenes = selectedAct?.scenes ?? [];
 
   return (
     <div className="space-y-6">
@@ -254,24 +211,20 @@ export function ActsTab({ story }: ActsTabProps) {
           <p className="text-zinc-500 mb-2">还没有幕</p>
           <p className="text-xs text-zinc-400 mb-4">如果您在规划阶段导入了小说，分幕结构会自动显示在这里</p>
           <div className="flex justify-center gap-2">
-            <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
-              导入剧本
-            </Button>
+            <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>导入剧本</Button>
             <Button onClick={handleAddAct}>创建第一幕</Button>
           </div>
         </div>
       ) : (
         <>
-          {acts.length > 0 && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
-              <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>已创建 {acts.length} 幕，共 {totalScenes} 个场景</span>
-              </div>
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
+            <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>已创建 {acts.length} 幕，共 {totalScenes} 个场景</span>
             </div>
-          )}
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-1">
               <h3 className="text-sm font-medium text-zinc-500 mb-3">幕列表</h3>
@@ -314,21 +267,15 @@ export function ActsTab({ story }: ActsTabProps) {
                       添加场景
                     </Button>
                   </div>
-
-                  {scenes.length === 0 ? (
+                  {currentScenes.length === 0 ? (
                     <div className="text-center py-8 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
                       <p className="text-zinc-500 text-sm">此幕还没有场景</p>
-                      <Button size="sm" className="mt-2" onClick={handleAddScene}>
-                        创建第一个场景
-                      </Button>
+                      <Button size="sm" className="mt-2" onClick={handleAddScene}>创建第一个场景</Button>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {scenes.map((scene, index) => (
-                        <div
-                          key={scene.id}
-                          className="bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 p-4"
-                        >
+                      {currentScenes.map((scene, index) => (
+                        <div key={scene.id} className="bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 p-4">
                           <div className="flex items-start gap-3">
                             <span className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-600 dark:text-zinc-400">
                               {index + 1}
@@ -336,20 +283,14 @@ export function ActsTab({ story }: ActsTabProps) {
                             <div className="flex-1">
                               <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{scene.title}</h4>
                               {scene.description && (
-                                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">
-                                  {scene.description}
-                                </p>
+                                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">{scene.description}</p>
                               )}
                               <div className="flex gap-2 mt-2">
                                 {scene.timeOfDay && (
-                                  <span className="text-xs px-2 py-0.5 bg-zinc-100 dark:bg-zinc-700 rounded">
-                                    {scene.timeOfDay}
-                                  </span>
+                                  <span className="text-xs px-2 py-0.5 bg-zinc-100 dark:bg-zinc-700 rounded">{scene.timeOfDay}</span>
                                 )}
                                 {scene.mood && (
-                                  <span className="text-xs px-2 py-0.5 bg-zinc-100 dark:bg-zinc-700 rounded">
-                                    {scene.mood}
-                                  </span>
+                                  <span className="text-xs px-2 py-0.5 bg-zinc-100 dark:bg-zinc-700 rounded">{scene.mood}</span>
                                 )}
                               </div>
                             </div>
@@ -374,7 +315,6 @@ export function ActsTab({ story }: ActsTabProps) {
           <DialogHeader>
             <DialogTitle>导入剧本并AI分析</DialogTitle>
           </DialogHeader>
-          
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[600px]">
             <div className="flex flex-col">
               <div className="flex gap-2 mb-3">
@@ -385,13 +325,8 @@ export function ActsTab({ story }: ActsTabProps) {
                   accept=".txt,.md,.doc,.docx,.pdf,.fountain,.fdx"
                   className="hidden"
                 />
-                <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-                  选择文件
-                </Button>
-                <Button 
-                  onClick={analyzeScript} 
-                  disabled={!scriptContent || isAnalyzing}
-                >
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()}>选择文件</Button>
+                <Button onClick={analyzeScript} disabled={!scriptContent || isAnalyzing}>
                   {isAnalyzing ? "分析中..." : "AI分析"}
                 </Button>
               </div>
@@ -402,7 +337,6 @@ export function ActsTab({ story }: ActsTabProps) {
                 className="flex-1 p-4 text-sm border border-zinc-200 dark:border-zinc-700 rounded-lg resize-none bg-zinc-50 dark:bg-zinc-900"
               />
             </div>
-
             <div className="flex flex-col h-full">
               {analysisResult ? (
                 <>
@@ -414,26 +348,14 @@ export function ActsTab({ story }: ActsTabProps) {
                       <p>🏞️ {analysisResult.locations.length} 个场景地点</p>
                     </div>
                   </div>
-
                   <div className="flex-1 flex flex-col border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-3 space-y-3">
                       {chatMessages.map((msg, idx) => (
-                        <div
-                          key={idx}
-                          className={`p-2 rounded-lg text-sm ${
-                            msg.role === "user"
-                              ? "bg-blue-100 dark:bg-blue-900/30 ml-8"
-                              : "bg-zinc-100 dark:bg-zinc-800 mr-8"
-                          }`}
-                        >
+                        <div key={idx} className={`p-2 rounded-lg text-sm ${msg.role === "user" ? "bg-blue-100 dark:bg-blue-900/30 ml-8" : "bg-zinc-100 dark:bg-zinc-800 mr-8"}`}>
                           {msg.content}
                         </div>
                       ))}
-                      {isChatLoading && (
-                        <div className="text-center text-zinc-400 text-sm">
-                          AI思考中...
-                        </div>
-                      )}
+                      {isChatLoading && <div className="text-center text-zinc-400 text-sm">AI思考中...</div>}
                     </div>
                     <div className="p-2 border-t border-zinc-200 dark:border-zinc-700 flex gap-2">
                       <input
@@ -444,15 +366,10 @@ export function ActsTab({ story }: ActsTabProps) {
                         placeholder="输入指令调整分幕结构..."
                         className="flex-1 px-3 py-2 text-sm border border-zinc-200 dark:border-zinc-700 rounded-lg"
                       />
-                      <Button size="sm" onClick={sendChatMessage} disabled={isChatLoading}>
-                        发送
-                      </Button>
+                      <Button size="sm" onClick={sendChatMessage} disabled={isChatLoading}>发送</Button>
                     </div>
                   </div>
-
-                  <Button className="mt-4 w-full" onClick={applyAnalysis}>
-                    应用分析结果到故事
-                  </Button>
+                  <Button className="mt-4 w-full" onClick={applyAnalysis}>应用分析结果到故事</Button>
                 </>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">

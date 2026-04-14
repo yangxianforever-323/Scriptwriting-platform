@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
-import { shotDb, storyboardDb } from "@/lib/db/storyboard";
-import { storyDb, characterDb, locationDb } from "@/lib/db/story";
 import type { Shot } from "@/types/storyboard";
 import type { Story, Character, Location } from "@/types/story";
 import type { Project } from "@/types/database";
@@ -42,24 +40,37 @@ export default function ShotDetailPage() {
 
   const loadData = async () => {
     try {
-      const response = await fetch(`/api/projects/${projectId}`);
-      if (!response.ok) throw new Error("Failed to fetch project");
-      const data = await response.json();
-      setProject(data.project);
+      const [projectRes, shotRes, boardRes, storyRes, charsRes, locsRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}`),
+        fetch(`/api/projects/${projectId}/shots/${shotId}`),
+        fetch(`/api/projects/${projectId}/storyboard-data`),
+        fetch(`/api/projects/${projectId}/story-data`),
+        fetch(`/api/projects/${projectId}/characters`),
+        fetch(`/api/projects/${projectId}/locations`),
+      ]);
 
-      const shotData = shotDb.getById(shotId);
-      if (shotData) {
-        setShot(shotData);
-        const shots = shotDb.getByStoryboardId(shotData.storyboardId);
-        setAllShots(shots);
-
-        const storyData = storyDb.getByProjectId(projectId);
-        if (storyData) {
-          setStory(storyData);
-          setCharacters(characterDb.getByProjectId(projectId));
-          setLocations(locationDb.getByProjectId(projectId));
-        }
+      if (projectRes.ok) {
+        const data = await projectRes.json();
+        setProject(data.project);
       }
+
+      if (shotRes.ok) {
+        const shotData: Shot = await shotRes.json();
+        setShot(shotData);
+      }
+
+      if (boardRes.ok) {
+        const boardData = await boardRes.json();
+        setAllShots(boardData.shots || []);
+      }
+
+      if (storyRes.ok) {
+        const storyResult = await storyRes.json();
+        if (storyResult.story) setStory(storyResult.story);
+      }
+
+      if (charsRes.ok) setCharacters(await charsRes.json());
+      if (locsRes.ok) setLocations(await locsRes.json());
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -69,15 +80,32 @@ export default function ShotDetailPage() {
 
   const handleUpdate = async (updates: Partial<Shot>) => {
     if (!shot) return;
-    const updated = shotDb.update(shot.id, updates);
-    if (updated) {
-      setShot(updated);
-      const idx = allShots.findIndex((s) => s.id === updated.id);
-      if (idx !== -1) {
-        const newShots = [...allShots];
-        newShots[idx] = updated;
-        setAllShots(newShots);
+    // Optimistic update
+    const optimistic = { ...shot, ...updates };
+    setShot(optimistic);
+    const idx = allShots.findIndex((s) => s.id === shot.id);
+    if (idx !== -1) {
+      const newShots = [...allShots];
+      newShots[idx] = optimistic;
+      setAllShots(newShots);
+    }
+    try {
+      const res = await fetch(`/api/projects/${projectId}/shots/${shot.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const updated: Shot = await res.json();
+        setShot(updated);
+        if (idx !== -1) {
+          const newShots = [...allShots];
+          newShots[idx] = updated;
+          setAllShots(newShots);
+        }
       }
+    } catch (e) {
+      console.error("Failed to update shot", e);
     }
   };
 

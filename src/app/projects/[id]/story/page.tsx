@@ -5,10 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
 import { StoryEditor } from "./StoryEditor";
-import { storyDb, characterDb, locationDb, propDb, actDb, storySceneDb } from "@/lib/db/story";
 import { saveStoryData, saveStageProgress, createAutoSave } from "@/lib/save-utils";
 import type { Project } from "@/types/database";
-import type { Story, Character, Location, Prop, Act } from "@/types/story";
+import type { Story } from "@/types/story";
 
 export default function StoryPage() {
   const params = useParams();
@@ -24,42 +23,34 @@ export default function StoryPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const autoSaveRef = useRef<ReturnType<typeof createAutoSave> | null>(null);
+  const storyRef = useRef<Story | null>(null);
   const isMountedRef = useRef(false);
+
+  // Keep storyRef in sync with story state for use in auto-save closure
+  useEffect(() => {
+    storyRef.current = story;
+  }, [story]);
 
   useEffect(() => {
     isMountedRef.current = true;
     fetchProject();
-
-    return () => {
-      isMountedRef.current = false;
-    };
+    return () => { isMountedRef.current = false; };
   }, [projectId]);
 
   useEffect(() => {
     if (!story) return;
 
     autoSaveRef.current = createAutoSave(async () => {
-      const currentStory = storyDb.getByProjectId(projectId);
+      const currentStory = storyRef.current;
       if (!currentStory) return;
 
-      const characters = characterDb.getByProjectId(projectId);
-      const locations = locationDb.getByProjectId(projectId);
-      const props = propDb.getByProjectId(projectId);
-      const acts = actDb.getByStoryId(currentStory.id);
-
+      // Save only the story overview fields — tabs handle their own data via API
       const result = await saveStoryData(projectId, {
         title: currentStory.title,
         logline: currentStory.logline,
         synopsis: currentStory.synopsis,
         genre: currentStory.genre,
         targetDuration: currentStory.targetDuration,
-        characters: characters.map((c) => ({ ...c })),
-        locations: locations.map((l) => ({ ...l })),
-        props: props.map((p) => ({ ...p })),
-        acts: acts.map((a) => ({
-          ...a,
-          scenes: storySceneDb.getByActId(a.id).map((s) => ({ ...s })),
-        })),
       });
 
       if (!result.success) {
@@ -67,9 +58,7 @@ export default function StoryPage() {
       }
     }, 3000);
 
-    return () => {
-      autoSaveRef.current?.cancel();
-    };
+    return () => { autoSaveRef.current?.cancel(); };
   }, [projectId, story?.id]);
 
   const fetchProject = async () => {
@@ -85,106 +74,50 @@ export default function StoryPage() {
         return;
       }
 
+      // Load story from server API — no client-side db calls
       let existingStory: Story | null = null;
-
       try {
         const storyResponse = await fetch(`/api/projects/${projectId}/story-data`);
         if (storyResponse.ok) {
           const storyResult = await storyResponse.json();
-
           if (storyResult.story) {
-            const serverStory = storyResult.story as Story;
-
-            const localStory = storyDb.getByProjectId(projectId);
-            if (!localStory || localStory.updatedAt < serverStory.updatedAt) {
-              storyDb.deleteByProjectId(projectId);
-              existingStory = storyDb.create(projectId, {
-                title: serverStory.title,
-                logline: serverStory.logline,
-                synopsis: serverStory.synopsis,
-                genre: serverStory.genre,
-                targetDuration: serverStory.targetDuration,
-                structure: serverStory.structure,
-                theme: serverStory.theme,
-                tone: serverStory.tone,
-              });
-            } else {
-              existingStory = localStory;
-            }
-
-            if (storyResult.characters && Array.isArray(storyResult.characters)) {
-              const localChars = characterDb.getByProjectId(projectId);
-              if (localChars.length === 0) {
-                (storyResult.characters as Character[]).forEach((char) => {
-                  characterDb.create(projectId, char);
-                });
-              }
-            }
-
-            if (storyResult.locations && Array.isArray(storyResult.locations)) {
-              const localLocs = locationDb.getByProjectId(projectId);
-              if (localLocs.length === 0) {
-                (storyResult.locations as Location[]).forEach((loc) => {
-                  locationDb.create(projectId, loc);
-                });
-              }
-            }
-
-            if (storyResult.props && Array.isArray(storyResult.props)) {
-              const localProps = propDb.getByProjectId(projectId);
-              if (localProps.length === 0) {
-                (storyResult.props as Prop[]).forEach((prop) => {
-                  propDb.create(projectId, prop);
-                });
-              }
-            }
-
-            if (storyResult.acts && Array.isArray(storyResult.acts)) {
-              const storyId = existingStory.id;
-              const localActs = actDb.getByStoryId(storyId);
-              if (localActs.length === 0) {
-                (storyResult.acts as Act[]).forEach((act) => {
-                  const createdAct = actDb.create(storyId, {
-                    index: act.index,
-                    title: act.title,
-                    description: act.description,
-                    goal: act.goal,
-                    conflict: act.conflict,
-                    resolution: act.resolution,
-                  });
-
-                  if (act.scenes && Array.isArray(act.scenes)) {
-                    act.scenes.forEach((scene: any) => {
-                      storySceneDb.create(createdAct.id, scene);
-                    });
-                  }
-                });
-              }
-            }
-
-            if (!existingStory) {
-              existingStory = storyDb.getByProjectId(projectId);
-            }
+            // Use server data directly — merge nested arrays from separate keys
+            existingStory = {
+              ...storyResult.story,
+              characters: storyResult.characters || [],
+              locations: storyResult.locations || [],
+              props: storyResult.props || [],
+              acts: storyResult.acts || [],
+            };
           }
         }
       } catch (e) {
-        console.log("Story data not available from API, falling back to localStorage");
+        console.log("Story data not available from API");
       }
 
+      // If no story yet, create one via API
       if (!existingStory) {
-        existingStory = storyDb.getByProjectId(projectId);
-      }
-
-      if (!existingStory) {
-        existingStory = storyDb.create(projectId, {
-          title: data.project.title,
-          logline: progress?.planning?.data?.logline || "",
-          synopsis: progress?.planning?.data?.synopsis || "",
-          genre: progress?.planning?.data?.genre || "",
-          targetDuration: progress?.planning?.data?.targetDuration || 60,
-          structure: "three-act",
+        const planningData = progress?.planning?.data || {};
+        const createRes = await fetch(`/api/projects/${projectId}/story-data`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: data.project.title,
+            logline: planningData.logline || "",
+            synopsis: planningData.synopsis || "",
+            genre: planningData.genre || "",
+            targetDuration: planningData.targetDuration || 60,
+          }),
         });
+        if (createRes.ok) {
+          const created = await createRes.json();
+          existingStory = created.data?.story || null;
+          if (existingStory) {
+            existingStory = { ...existingStory, characters: [], locations: [], props: [], acts: [] };
+          }
+        }
       }
+
       setStory(existingStory);
       setSaveStatus("已加载");
     } catch (error) {
@@ -208,41 +141,41 @@ export default function StoryPage() {
     setSaveStatus("保存中...");
 
     try {
-      const currentStory = storyDb.getByProjectId(projectId);
-      if (!currentStory) throw new Error("Story not found");
-
-      const characters = characterDb.getByProjectId(projectId);
-      const locations = locationDb.getByProjectId(projectId);
-      const props = propDb.getByProjectId(projectId);
-      const acts = actDb.getByStoryId(currentStory.id);
-
+      // Save story overview via API
       const result = await saveStoryData(projectId, {
-        title: currentStory.title,
-        logline: currentStory.logline,
-        synopsis: currentStory.synopsis,
-        genre: currentStory.genre,
-        targetDuration: currentStory.targetDuration,
-        characters: characters.map((c) => ({ ...c })),
-        locations: locations.map((l) => ({ ...l })),
-        props: props.map((p) => ({ ...p })),
-        acts: acts.map((a) => ({
-          ...a,
-          scenes: storySceneDb.getByActId(a.id).map((s) => ({ ...s })),
-        })),
+        title: story.title,
+        logline: story.logline,
+        synopsis: story.synopsis,
+        genre: story.genre,
+        targetDuration: story.targetDuration,
       });
 
       if (!result.success) {
         throw new Error(result.error);
       }
 
+      // Get counts from API for stage progress
+      const [charsRes, locsRes, propsRes, actsRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}/characters`),
+        fetch(`/api/projects/${projectId}/locations`),
+        fetch(`/api/projects/${projectId}/props`),
+        fetch(`/api/projects/${projectId}/acts`),
+      ]);
+      const [chars, locs, propsList, acts] = await Promise.all([
+        charsRes.ok ? charsRes.json() : [],
+        locsRes.ok ? locsRes.json() : [],
+        propsRes.ok ? propsRes.json() : [],
+        actsRes.ok ? actsRes.json() : [],
+      ]);
+
       await saveStageProgress({
         projectId,
         stage: "story",
         status: "in_progress",
         data: {
-          charactersCount: characters.length,
-          locationsCount: locations.length,
-          propsCount: props.length,
+          charactersCount: chars.length,
+          locationsCount: locs.length,
+          propsCount: propsList.length,
           actsCount: acts.length,
           updatedAt: new Date().toISOString(),
         },
@@ -250,20 +183,15 @@ export default function StoryPage() {
 
       setHasUnsavedChanges(false);
       setSaveStatus("已保存");
-
       setTimeout(() => {
-        if (isMountedRef.current) {
-          setSaveStatus("");
-        }
+        if (isMountedRef.current) setSaveStatus("");
       }, 2000);
     } catch (error) {
       console.error("Error saving:", error);
       setError("保存失败，请重试");
       setSaveStatus("");
     } finally {
-      if (isMountedRef.current) {
-        setSaving(false);
-      }
+      if (isMountedRef.current) setSaving(false);
     }
   };
 
@@ -274,25 +202,13 @@ export default function StoryPage() {
     setError(null);
 
     try {
-      const currentStory = storyDb.getByProjectId(projectId);
-      const characters = characterDb.getByProjectId(projectId);
-      const locations = locationDb.getByProjectId(projectId);
-      const props = propDb.getByProjectId(projectId);
-      const acts = currentStory ? actDb.getByStoryId(currentStory.id) : [];
-
+      // Save story overview
       const result = await saveStoryData(projectId, {
-        title: currentStory?.title,
-        logline: currentStory?.logline,
-        synopsis: currentStory?.synopsis,
-        genre: currentStory?.genre,
-        targetDuration: currentStory?.targetDuration,
-        characters: characters.map((c) => ({ ...c })),
-        locations: locations.map((l) => ({ ...l })),
-        props: props.map((p) => ({ ...p })),
-        acts: acts.map((a) => ({
-          ...a,
-          scenes: storySceneDb.getByActId(a.id).map((s) => ({ ...s })),
-        })),
+        title: story.title,
+        logline: story.logline,
+        synopsis: story.synopsis,
+        genre: story.genre,
+        targetDuration: story.targetDuration,
         stage: "story",
         status: "completed",
       });
@@ -301,14 +217,28 @@ export default function StoryPage() {
         throw new Error("Failed to save story data");
       }
 
+      // Get counts for stage progress
+      const [charsRes, locsRes, propsRes, actsRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}/characters`),
+        fetch(`/api/projects/${projectId}/locations`),
+        fetch(`/api/projects/${projectId}/props`),
+        fetch(`/api/projects/${projectId}/acts`),
+      ]);
+      const [chars, locs, propsList, acts] = await Promise.all([
+        charsRes.ok ? charsRes.json() : [],
+        locsRes.ok ? locsRes.json() : [],
+        propsRes.ok ? propsRes.json() : [],
+        actsRes.ok ? actsRes.json() : [],
+      ]);
+
       await saveStageProgress({
         projectId,
         stage: "story",
         status: "completed",
         data: {
-          charactersCount: characters.length,
-          locationsCount: locations.length,
-          propsCount: props.length,
+          charactersCount: chars.length,
+          locationsCount: locs.length,
+          propsCount: propsList.length,
           actsCount: acts.length,
           completedAt: new Date().toISOString(),
         },
@@ -320,9 +250,7 @@ export default function StoryPage() {
       console.error("Error completing story:", error);
       setError(error instanceof Error ? error.message : "保存失败，请重试");
     } finally {
-      if (isMountedRef.current) {
-        setSaving(false);
-      }
+      if (isMountedRef.current) setSaving(false);
     }
   };
 
@@ -350,12 +278,8 @@ export default function StoryPage() {
         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
           <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-                故事开发
-              </h1>
-              <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-                构建您的故事结构、角色和场景
-              </p>
+              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">故事开发</h1>
+              <p className="text-zinc-500 dark:text-zinc-400 mt-1">构建您的故事结构、角色和场景</p>
             </div>
             <div className="flex items-center gap-3">
               {saveStatus && (
@@ -393,9 +317,7 @@ export default function StoryPage() {
               disabled={saving}
               className="px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm flex items-center gap-2"
             >
-              {saving ? (
-                <Spinner size="sm" />
-              ) : (
+              {saving ? <Spinner size="sm" /> : (
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                 </svg>
@@ -416,10 +338,7 @@ export default function StoryPage() {
                 className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 text-sm font-medium"
               >
                 {saving ? (
-                  <>
-                    <Spinner size="sm" />
-                    保存中...
-                  </>
+                  <><Spinner size="sm" />保存中...</>
                 ) : (
                   <>
                     完成并进入分镜设计

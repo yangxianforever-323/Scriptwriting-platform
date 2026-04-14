@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(wc -l /d/Trae_project/Scriptwriting/src/app/api/projects/[id]/route.ts)",
+      "Bash(npx tsc:*)",
+      "Bash(grep -n \"referenceImages\\\\|thumbnailUrl\\\\|AIGenerateImage\\\\|onImageGenerated\" /d/Trae_project/Scriptwriting/src/app/projects/[id]/story/tabs/CharactersTab.tsx)",
+      "Bash(grep -n \"data:image\\\\|base64\\\\|/uploads\" /d/Trae_project/Scriptwriting/src/app/projects/[id]/planning/review/page.tsx)",
+      "Bash(grep -n \"URL.createObjectURL\" /d/Trae_project/Scriptwriting/src/app/projects/[id]/planning/review/page.tsx)"
+    ],
+    "additionalDirectories": [
+      "d:\\Trae_project\\Scriptwriting\\src\\app\\projects\\[id]\\storyboard"
+    ]
+  }
+}

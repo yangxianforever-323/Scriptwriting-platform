@@ -3,7 +3,6 @@
 import { useState, useRef } from "react";
 import type { Shot } from "@/types/storyboard";
 import type { Story } from "@/types/story";
-import { shotDb } from "@/lib/db/storyboard";
 
 interface ShotListProps {
   shots: Shot[];
@@ -14,6 +13,7 @@ interface ShotListProps {
   onShotDoubleClick?: (shot: Shot) => void;
   onUpdateShots: (shots: Shot[]) => void;
   storyboardId?: string;
+  projectId: string;
 }
 
 export function ShotList({
@@ -25,41 +25,55 @@ export function ShotList({
   onShotDoubleClick,
   onUpdateShots,
   storyboardId,
+  projectId,
 }: ShotListProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragItemRef = useRef<Shot | null>(null);
 
-  const handleAddShot = () => {
-    const storyboardId = shots[0]?.storyboardId;
-    if (!storyboardId) return;
+  const handleAddShot = async () => {
+    const sbId = storyboardId || shots[0]?.storyboardId;
+    if (!sbId) return;
 
-    const newShot = shotDb.create(storyboardId, {
-      title: `分镜 ${shots.length + 1}`,
-      description: "",
-      duration: 6,
+    const res = await fetch(`/api/projects/${projectId}/shots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storyboardId: sbId,
+        title: `分镜 ${shots.length + 1}`,
+        description: "",
+        duration: 6,
+      }),
     });
-
+    if (!res.ok) return;
+    const newShot: Shot = await res.json();
     onUpdateShots([...shots, newShot]);
     onSelectShot(newShot);
   };
 
-  const handleDeleteShot = (shotId: string) => {
-    shotDb.delete(shotId);
-    const updatedShots = shots.filter((s) => s.id !== shotId);
-    onUpdateShots(updatedShots);
+  const handleDeleteShot = async (shotId: string) => {
+    await fetch(`/api/projects/${projectId}/shots/${shotId}`, { method: "DELETE" });
+    onUpdateShots(shots.filter((s) => s.id !== shotId));
   };
 
-  const handleDuplicateShot = (shot: Shot) => {
-    const newShot = shotDb.create(shot.storyboardId, {
-      ...shot,
-      title: `${shot.title} (复制)`,
-      imageUrl: undefined,
-      imageStatus: "pending",
-      videoUrl: undefined,
-      videoStatus: "pending",
+  const handleDuplicateShot = async (shot: Shot) => {
+    const res = await fetch(`/api/projects/${projectId}/shots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storyboardId: shot.storyboardId,
+        title: `${shot.title} (复制)`,
+        description: shot.description,
+        duration: shot.duration,
+        shotType: shot.shotType,
+        shotTypeName: shot.shotTypeName,
+        imageStatus: "pending",
+        videoStatus: "pending",
+      }),
     });
+    if (!res.ok) return;
+    const newShot: Shot = await res.json();
     onUpdateShots([...shots, newShot]);
   };
 
@@ -83,9 +97,12 @@ export function ShotList({
 
       if (!response.ok) throw new Error("生成失败");
 
-      const result = await response.json();
-      const allShots = shotDb.getByStoryboardId(storyboardId);
-      onUpdateShots(allShots);
+      // Reload shots from API
+      const boardRes = await fetch(`/api/projects/${projectId}/storyboard-data`);
+      if (boardRes.ok) {
+        const boardData = await boardRes.json();
+        onUpdateShots(boardData.shots || []);
+      }
     } catch (error) {
       console.error("Error generating from story:", error);
       alert("生成失败，请重试");
@@ -124,7 +141,7 @@ export function ShotList({
     setDragOverIndex(null);
   };
 
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
 
     if (draggedIndex === null || draggedIndex === dropIndex) {
@@ -137,10 +154,14 @@ export function ShotList({
     const [removed] = newShots.splice(draggedIndex, 1);
     newShots.splice(dropIndex, 0, removed);
 
-    const storyboardId = shots[0]?.storyboardId;
-    if (storyboardId) {
+    const sbId = shots[0]?.storyboardId;
+    if (sbId) {
       const shotIds = newShots.map((s) => s.id);
-      shotDb.reorder(storyboardId, shotIds);
+      await fetch(`/api/projects/${projectId}/shots/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyboardId: sbId, shotIds }),
+      });
     }
 
     onUpdateShots(newShots);

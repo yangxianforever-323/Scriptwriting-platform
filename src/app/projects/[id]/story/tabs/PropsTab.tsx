@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import type { Story, Prop, PropImportance } from "@/types/story";
-import { propDb } from "@/lib/db/story";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 
@@ -20,39 +19,53 @@ export function PropsTab({ story }: PropsTabProps) {
   const [props, setProps] = useState<Prop[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProp, setEditingProp] = useState<Prop | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<Prop>>({
     name: "",
     description: "",
     importance: "supporting",
   });
 
-  const loadProps = () => {
-    const p = propDb.getByProjectId(story.projectId);
-    setProps(p);
+  const loadProps = async () => {
+    try {
+      const res = await fetch(`/api/projects/${story.projectId}/props`);
+      if (!res.ok) return;
+      const p: Prop[] = await res.json();
+      setProps(p);
+    } catch (e) {
+      console.error("Failed to load props", e);
+    }
   };
 
   useEffect(() => {
     loadProps();
-    
-    const handleFocus = () => {
-      loadProps();
-    };
-    window.addEventListener("focus", handleFocus);
-    
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
   }, [story.projectId]);
 
-  const handleSave = () => {
-    if (editingProp) {
-      propDb.update(editingProp.id, formData);
-    } else {
-      propDb.create(story.projectId, formData);
+  const handleSave = async () => {
+    if (!formData.name?.trim()) return;
+    setSaving(true);
+    try {
+      if (editingProp) {
+        await fetch(`/api/projects/${story.projectId}/props/${editingProp.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+      } else {
+        await fetch(`/api/projects/${story.projectId}/props`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+      }
+      await loadProps();
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (e) {
+      console.error("Failed to save prop", e);
+    } finally {
+      setSaving(false);
     }
-    loadProps();
-    setIsDialogOpen(false);
-    resetForm();
   };
 
   const handleEdit = (prop: Prop) => {
@@ -61,10 +74,15 @@ export function PropsTab({ story }: PropsTabProps) {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (propId: string) => {
-    if (confirm("确定要删除这个道具吗？")) {
-      propDb.delete(propId);
-      loadProps();
+  const handleDelete = async (propId: string) => {
+    if (!confirm("确定要删除这个道具吗？")) return;
+    try {
+      await fetch(`/api/projects/${story.projectId}/props/${propId}`, {
+        method: "DELETE",
+      });
+      await loadProps();
+    } catch (e) {
+      console.error("Failed to delete prop", e);
     }
   };
 
@@ -75,11 +93,7 @@ export function PropsTab({ story }: PropsTabProps) {
   };
 
   const resetForm = () => {
-    setFormData({
-      name: "",
-      description: "",
-      importance: "supporting",
-    });
+    setFormData({ name: "", description: "", importance: "supporting" });
   };
 
   return (
@@ -116,16 +130,14 @@ export function PropsTab({ story }: PropsTabProps) {
         </div>
       ) : (
         <>
-          {props.length > 0 && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
-              <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>已识别 {props.length} 个道具，点击卡片可编辑详细信息</span>
-              </div>
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
+            <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>已识别 {props.length} 个道具，点击卡片可编辑详细信息</span>
             </div>
-          )}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {props.map((prop) => (
               <div
@@ -141,18 +153,12 @@ export function PropsTab({ story }: PropsTabProps) {
                     </span>
                   </div>
                   <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => handleEdit(prop)}
-                      className="p-1 text-zinc-400 hover:text-blue-600"
-                    >
+                    <button onClick={() => handleEdit(prop)} className="p-1 text-zinc-400 hover:text-blue-600">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
-                    <button
-                      onClick={() => handleDelete(prop.id)}
-                      className="p-1 text-zinc-400 hover:text-red-600"
-                    >
+                    <button onClick={() => handleDelete(prop.id)} className="p-1 text-zinc-400 hover:text-red-600">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
@@ -206,7 +212,7 @@ export function PropsTab({ story }: PropsTabProps) {
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>取消</Button>
-            <Button onClick={handleSave} disabled={!formData.name?.trim()}>保存</Button>
+            <Button onClick={handleSave} disabled={!formData.name?.trim() || saving}>保存</Button>
           </div>
         </DialogContent>
       </Dialog>
