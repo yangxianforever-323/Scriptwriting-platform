@@ -9,9 +9,10 @@ const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWK
 const VECTOR_ENGINE_BASE_URL = process.env.GEMINI_BASE_URL || "https://api.vectorengine.ai";
 const DEFAULT_MODEL = "gemini-3.1-flash-image-preview";
 
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 5000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 10000;
 const REQUEST_TIMEOUT_MS = 180000;
+const CONNECT_TIMEOUT_MS = 30000;
 
 export class GeminiImageApiError extends Error {
   constructor(
@@ -181,19 +182,28 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
         content: userContent,
       });
 
-      const response = await fetch(`${VECTOR_ENGINE_BASE_URL}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${VECTOR_ENGINE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: options.model || DEFAULT_MODEL,
-          messages: messages,
-          max_tokens: 4096,
+      const response = await Promise.race([
+        fetch(`${VECTOR_ENGINE_BASE_URL}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${VECTOR_ENGINE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: options.model || DEFAULT_MODEL,
+            messages: messages,
+            max_tokens: 4096,
+          }),
         }),
-        signal: controller.signal,
-      });
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Connection timeout")), CONNECT_TIMEOUT_MS)
+        ),
+      ]).catch((error) => {
+        if (error.message === "Connection timeout") {
+          throw new Error(`Connection timeout after ${CONNECT_TIMEOUT_MS / 1000}s`);
+        }
+        throw error;
+      }) as Response;
 
       const data = await response.json();
 
