@@ -1,12 +1,14 @@
 
 /**
  * Simplified AI Image Generation API.
- * POST /api/ai/generate-image - Generate images directly using generateImage
+ * POST /api/ai/generate-image - Generate images with parallel processing
+ * Supports generating multiple style variations in parallel
  */
 
 import { NextResponse } from "next/server";
 import {
   generateImage,
+  generateImageWithStyle,
   isGeminiConfigured,
   GeminiImageApiError,
 } from "@/lib/ai/gemini-image";
@@ -36,6 +38,18 @@ function saveBase64Image(base64Data: string, fileName: string): string {
   return `/uploads/generated-images/${fileName}`;
 }
 
+// 风格变体列表 - 用于生成不同风格的图片
+const STYLE_VARIATIONS = [
+  { name: "realistic", prompt: "Photorealistic, natural lighting, professional photography" },
+  { name: "cinematic", prompt: "Cinematic, dramatic lighting, film grain, movie still quality" },
+  { name: "anime", prompt: "Anime style, vibrant colors, clean lines, Japanese animation" },
+  { name: "oil_painting", prompt: "Oil painting style, thick brushstrokes, rich colors, classical art" },
+  { name: "watercolor", prompt: "Watercolor painting, soft edges, delicate colors, artistic illustration" },
+  { name: "cyberpunk", prompt: "Cyberpunk style, neon lights, futuristic, dark atmosphere" },
+  { name: "fantasy", prompt: "Fantasy style, magical elements, ethereal, dreamlike, mystical" },
+  { name: "cartoon", prompt: "Cartoon style, bright colors, playful, exaggerated features" },
+];
+
 export async function POST(request: Request) {
   try {
     if (!isGeminiConfigured()) {
@@ -46,7 +60,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { prompt, style, type, aspectRatio, resolution, count = 1 } = body;
+    const { prompt, style, type, aspectRatio, resolution, count = 1, referenceImages = [] } = body;
 
     if (!prompt) {
       return NextResponse.json(
@@ -56,28 +70,57 @@ export async function POST(request: Request) {
     }
 
     const timestamp = Date.now();
-    const images: string[] = [];
+    const images: { url: string; style?: string }[] = [];
 
-    for (let i = 0; i < count; i++) {
-      const generatedImages = await generateImage(prompt, {
-        style,
-        type,
-        aspectRatio,
-        resolution,
-        n: 1,
-      });
+    // 风格变体数量
+    const styleVariationCount = Math.min(count, STYLE_VARIATIONS.length);
+    const variations = STYLE_VARIATIONS.slice(0, styleVariationCount);
 
-      if (generatedImages.length > 0) {
-        const fileName = `generated-${timestamp}-${i}.png`;
-        const url = saveBase64Image(generatedImages[0], fileName);
-        images.push(url);
+    console.log(`Starting parallel generation of ${styleVariationCount} images...`);
+
+    // 使用 Promise.all 并行生成多张图片
+    const generatePromises = variations.map(async (variation, index) => {
+      try {
+        console.log(`Generating image ${index + 1}/${styleVariationCount} with style: ${variation.name}`);
+
+        const result = await generateImageWithStyle(prompt, {
+          style: style || variation.name,
+          type,
+          aspectRatio,
+          resolution,
+          referenceImages,
+          customStyleSuffix: variation.prompt,
+        });
+
+        if (result && result.length > 0) {
+          const fileName = `generated-${timestamp}-${index}.png`;
+          const url = saveBase64Image(result[0], fileName);
+          console.log(`Image ${index + 1} generated successfully: ${url}`);
+          return { url, style: variation.name };
+        }
+        return null;
+      } catch (error) {
+        console.error(`Error generating image ${index + 1}:`, error);
+        return null;
+      }
+    });
+
+    const results = await Promise.all(generatePromises);
+
+    // 收集成功生成的图片
+    for (const result of results) {
+      if (result) {
+        images.push(result);
       }
     }
 
+    console.log(`Generated ${images.length} images successfully out of ${count} requested`);
+
     return NextResponse.json({
       success: true,
-      images: images.map((url) => ({ url })),
+      images,
       count: images.length,
+      totalRequested: count,
     });
   } catch (error) {
     console.error("Error generating image:", error);
@@ -104,5 +147,6 @@ export async function GET() {
     configured: isGeminiConfigured(),
     model: "gemini-3.1-flash-image-preview",
     endpoint: "/api/ai/generate-image",
+    supportedStyles: STYLE_VARIATIONS.map(v => v.name),
   });
 }

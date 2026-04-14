@@ -454,3 +454,28 @@ export async function regenerateImage(
 ): Promise<string[]> {
   return generateImage(prompt, options);
 }
+
+export async function generateImageWithStyle(
+  basePrompt: string,
+  options: {
+    style?: string;
+    type?: "character" | "location" | "prop" | "scene";
+    aspectRatio?: string;
+    resolution?: string;
+    referenceImages?: string[];
+    customStyleSuffix?: string;
+  } = {}
+): Promise<string[]> {
+  const stylePrompt = buildStylePrompt(options.style, options.type);
+  const customSuffix = options.customStyleSuffix || "";
+
+  const fullPrompt = `${basePrompt}${stylePrompt}${customSuffix ? `. ${customSuffix}` : ""}`;
+
+  return generateImage(fullPrompt, {
+    style: options.style,
+    type: options.type,
+    aspectRatio: options.aspectRatio,
+    resolution: options.resolution,
+    referenceImages: options.referenceImages,
+  });
+}

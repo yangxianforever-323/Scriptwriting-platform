@@ -444,6 +444,7 @@ export function CharacterGeneratePanel({
                         aspectRatio: aspectRatio,
                         resolution: resolutionValue,
                         count: quantity,
+                        referenceImages: referenceImages,
                       }),
                     });
 
