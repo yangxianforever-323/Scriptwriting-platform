@@ -77,6 +77,15 @@ export async function POST(request: Request) {
     const variations = STYLE_VARIATIONS.slice(0, styleVariationCount);
 
     console.log(`Starting parallel generation of ${styleVariationCount} images...`);
+    console.log("Request details:", {
+      promptLength: prompt.length,
+      style,
+      type,
+      aspectRatio,
+      resolution,
+      count,
+      referenceImagesCount: referenceImages?.length || 0
+    });
 
     // 使用 Promise.all 并行生成多张图片
     const generatePromises = variations.map(async (variation, index) => {
