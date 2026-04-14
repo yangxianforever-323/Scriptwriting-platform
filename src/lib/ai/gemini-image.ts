@@ -182,8 +182,11 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
         content: userContent,
       });
 
-      const response = await Promise.race([
-        fetch(`${VECTOR_ENGINE_BASE_URL}/v1/chat/completions`, {
+      const response = await (() => {
+        const attemptController = new AbortController();
+        const attemptTimeoutId = setTimeout(() => attemptController.abort(), REQUEST_TIMEOUT_MS);
+        
+        return fetch(`${VECTOR_ENGINE_BASE_URL}/v1/chat/completions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -194,16 +197,18 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
             messages: messages,
             max_tokens: 4096,
           }),
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Connection timeout")), CONNECT_TIMEOUT_MS)
-        ),
-      ]).catch((error) => {
-        if (error.message === "Connection timeout") {
-          throw new Error(`Connection timeout after ${CONNECT_TIMEOUT_MS / 1000}s`);
-        }
-        throw error;
-      }) as Response;
+          signal: attemptController.signal,
+        }).then((res) => {
+          clearTimeout(attemptTimeoutId);
+          return res;
+        }).catch((error) => {
+          clearTimeout(attemptTimeoutId);
+          if (error instanceof Error && error.name === "AbortError") {
+            throw new Error("Request timed out");
+          }
+          throw error;
+        });
+      })();
 
       const data = await response.json();
 
