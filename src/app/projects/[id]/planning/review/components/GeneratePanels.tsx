@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Spinner } from "@/components/ui/Spinner";
+import { ImageViewer, ClickableImage } from "@/components/ui/ImageViewer";
 
 // ============================================
 // Character Generate Panel (Enhanced)
@@ -74,6 +75,9 @@ export function CharacterGeneratePanel({
   
   // 保存位置选择状态
   const [saveToImageType, setSaveToImageType] = useState<string>(selectedImageType);
+  
+  // 图片查看器状态
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
   
   // 获取当前类型生成的图片
   const generatedImages = generatedImagesByType[selectedImageType] || [];
@@ -560,20 +564,47 @@ export function CharacterGeneratePanel({
                     {generatedImages.map((img, idx) => (
                       <div
                         key={idx}
-                        onClick={() => setConfirmedImage(img)}
                         className={`rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group ${
                           confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
                         } ${selectedImageType === "combo" ? "aspect-video" : selectedImageType === "closeup-threeview" ? "aspect-square" : "aspect-[2/3]"}`}
                       >
-                        <img src={img} alt={`生成${idx + 1}`} className="w-full h-full object-cover" />
-                        {confirmedImage === img && (
-                          <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
-                            <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                          </div>
-                        )}
-                        <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[9px] bg-black/70 text-white px-1.5 py-0.5 rounded">预览</span>
-                        </div>
+                        <img 
+                          src={img} 
+                          alt={`生成${idx + 1}`} 
+                          className="w-full h-full object-cover"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewerImage(img);
+                          }}
+                        />
+                        {/* 选择按钮 */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmedImage(img);
+                          }}
+                          className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                            confirmedImage === img 
+                              ? "bg-green-500 text-white" 
+                              : "bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-green-600"
+                          }`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        {/* 放大按钮 */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewerImage(img);
+                          }}
+                          className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-blue-600 flex items-center justify-center transition-all"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                          </svg>
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -895,6 +926,14 @@ export function CharacterGeneratePanel({
         </div>
       </div>
     </div>
+    
+    {/* Image Viewer */}
+    <ImageViewer
+      src={viewerImage || ""}
+      alt="生成的图片"
+      isOpen={!!viewerImage}
+      onClose={() => setViewerImage(null)}
+    />
   );
 }
 
@@ -974,6 +1013,9 @@ export function LocationGeneratePanel({
   
   // 保存图片时选择的视角位置
   const [saveToAngle, setSaveToAngle] = useState<number>(0);
+  
+  // 图片查看器状态
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -1654,86 +1696,133 @@ export function LocationGeneratePanel({
                   {generatedImages.map((img, idx) => (
                     <div
                       key={idx}
-                      onClick={() => setConfirmedImage(img)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        // 创建右键菜单
-                        const menu = document.createElement('div');
-                        menu.className = 'fixed bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-50 min-w-[140px]';
-                        menu.style.left = `${e.clientX}px`;
-                        menu.style.top = `${e.clientY}px`;
-                        
-                        // 标记菜单是否已移除，防止重复移除
-                        let menuRemoved = false;
-                        
-                        // 安全移除菜单的辅助函数
-                        const safeRemoveMenu = () => {
-                          if (!menuRemoved && document.body.contains(menu)) {
-                            menuRemoved = true;
-                            document.body.removeChild(menu);
-                          }
-                          document.removeEventListener('click', closeMenu);
-                        };
-                        
-                        // 点击其他地方关闭菜单
-                        const closeMenu = (event?: MouseEvent) => {
-                          // 如果点击的是菜单内部，不关闭
-                          if (event && menu.contains(event.target as Node)) {
-                            return;
-                          }
-                          safeRemoveMenu();
-                        };
-                        
-                        // 保存图片选项
-                        const saveItem = document.createElement('button');
-                        saveItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
-                        saveItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>保存图片`;
-                        saveItem.onclick = (e) => {
-                          e.stopPropagation();
-                          const link = document.createElement('a');
-                          link.href = img;
-                          link.download = `${location.name || 'image'}_${ANGLE_LABELS[selectedAngle]}_${idx + 1}.png`;
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                          safeRemoveMenu();
-                        };
-                        
-                        // 复制图片地址选项
-                        const copyItem = document.createElement('button');
-                        copyItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
-                        copyItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>复制图片地址`;
-                        copyItem.onclick = (e) => {
-                          e.stopPropagation();
-                          navigator.clipboard.writeText(img);
-                          safeRemoveMenu();
-                        };
-                        
-                        // 在新标签页打开
-                        const openItem = document.createElement('button');
-                        openItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
-                        openItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>在新标签页打开`;
-                        openItem.onclick = (e) => {
-                          e.stopPropagation();
-                          window.open(img, '_blank');
-                          safeRemoveMenu();
-                        };
-                        
-                        menu.appendChild(saveItem);
-                        menu.appendChild(copyItem);
-                        menu.appendChild(openItem);
-                        document.body.appendChild(menu);
-                        
-                        // 延迟添加点击事件监听，避免立即触发
+                      className="relative group"
+                    >
+                      <div
+                        onClick={() => setConfirmedImage(img)}
+                        className={`rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${
+                          confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
+                        } aspect-video`}
+                      >
+                        <img 
+                          src={img} 
+                          alt={`生成${idx + 1}`} 
+                          className="w-full h-full object-cover"
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            // 创建右键菜单
+                            const menu = document.createElement('div');
+                            menu.className = 'fixed bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-50 min-w-[140px]';
+                            menu.style.left = `${e.clientX}px`;
+                            menu.style.top = `${e.clientY}px`;
+                            
+                            // 标记菜单是否已移除，防止重复移除
+                            let menuRemoved = false;
+                            
+                            // 安全移除菜单的辅助函数
+                            const safeRemoveMenu = () => {
+                              if (!menuRemoved && document.body.contains(menu)) {
+                                menuRemoved = true;
+                                document.body.removeChild(menu);
+                              }
+                              document.removeEventListener('click', closeMenu);
+                            };
+                            
+                            // 点击其他地方关闭菜单
+                            const closeMenu = (event?: MouseEvent) => {
+                              // 如果点击的是菜单内部，不关闭
+                              if (event && menu.contains(event.target as Node)) {
+                                return;
+                              }
+                              safeRemoveMenu();
+                            };
+                            
+                            // 保存图片选项
+                            const saveItem = document.createElement('button');
+                            saveItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
+                            saveItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>保存图片`;
+                            saveItem.onclick = (e) => {
+                              e.stopPropagation();
+                              const link = document.createElement('a');
+                              link.href = img;
+                              link.download = `${location.name || 'image'}_${ANGLE_LABELS[selectedAngle]}_${idx + 1}.png`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              safeRemoveMenu();
+                            };
+                            
+                            // 复制图片地址选项
+                            const copyItem = document.createElement('button');
+                            copyItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
+                            copyItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>复制图片地址`;
+                            copyItem.onclick = (e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(img);
+                              safeRemoveMenu();
+                            };
+                            
+                            // 在新标签页打开
+                            const openItem = document.createElement('button');
+                            openItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
+                            openItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>在新标签页打开`;
+                            openItem.onclick = (e) => {
+                              e.stopPropagation();
+                              window.open(img, '_blank');
+                              safeRemoveMenu();
+                            };
+                            
+                            menu.appendChild(saveItem);
+                            menu.appendChild(copyItem);
+                            menu.appendChild(openItem);
+                            document.body.appendChild(menu);
+                            
+                            // 延迟添加点击事件监听，避免立即触发
                         setTimeout(() => document.addEventListener('click', closeMenu), 100);
                       }}
                       className={`aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group ${
                         confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
                       }`}
                     >
-                      <img src={img} alt={`生成${idx + 1}`} className="w-full h-full object-cover" />
+                      <img 
+                        src={img} 
+                        alt={`生成${idx + 1}`} 
+                        className="w-full h-full object-cover"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewerImage(img);
+                        }}
+                      />
+                      {/* 放大按钮 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewerImage(img);
+                        }}
+                        className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-blue-600 flex items-center justify-center transition-all z-10"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                        </svg>
+                      </button>
+                      {/* 选择按钮 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmedImage(img);
+                        }}
+                        className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-all z-10 ${
+                          confirmedImage === img 
+                            ? "bg-green-500 text-white" 
+                            : "bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-green-600"
+                        }`}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
                       {confirmedImage === img && (
-                        <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center pointer-events-none">
                           <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                         </div>
                       )}
@@ -1849,6 +1938,14 @@ export function LocationGeneratePanel({
         </div>
       </div>
     </div>
+    
+    {/* Image Viewer */}
+    <ImageViewer
+      src={viewerImage || ""}
+      alt="生成的图片"
+      isOpen={!!viewerImage}
+      onClose={() => setViewerImage(null)}
+    />
   );
 }
 
@@ -1934,6 +2031,9 @@ export function SceneGeneratePanel({
   const [newPropHolder, setNewPropHolder] = useState("");
   const [sceneGenerating, setSceneGenerating] = useState(false);
   const sceneUploadRef = useRef<HTMLInputElement>(null);
+  
+  // 图片查看器状态
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   const handleSceneUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2634,7 +2734,26 @@ export function SceneGeneratePanel({
                   <p className="text-xs text-zinc-500">点击"生成场景图"创建此幕的视觉参考</p>
                 </div>
               ) : (
-                <img src={scene.thumbnailUrl} alt={scene.title} className="max-h-[360px] max-w-full object-contain rounded-lg shadow-xl" />
+                <div className="relative group">
+                  <img 
+                    src={scene.thumbnailUrl} 
+                    alt={scene.title} 
+                    className="max-h-[360px] max-w-full object-contain rounded-lg shadow-xl cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => setViewerImage(scene.thumbnailUrl!)}
+                  />
+                  {/* 放大按钮 */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewerImage(scene.thumbnailUrl!);
+                    }}
+                    className="absolute bottom-2 left-2 w-8 h-8 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-blue-600 flex items-center justify-center transition-all"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                    </svg>
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -2675,5 +2794,13 @@ export function SceneGeneratePanel({
         </div>
       </div>
     </div>
+    
+    {/* Image Viewer */}
+    <ImageViewer
+      src={viewerImage || ""}
+      alt="场景图片"
+      isOpen={!!viewerImage}
+      onClose={() => setViewerImage(null)}
+    />
   );
 }
