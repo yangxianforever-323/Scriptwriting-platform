@@ -445,11 +445,43 @@ export function CharacterGeneratePanel({
                     };
                     const resolutionValue = resolutionMap[resolution] || "2K";
 
+                    // 根据图片类型构建不同的提示词
+                    const basePrompt = prompt.trim() || `${character.name}，${character.appearance}，${character.description?.substring(0, 100) || ""}`;
+                    let enhancedPrompt = basePrompt;
+                    
+                    // 添加纯色背景要求
+                    const backgroundPrompt = "，pure white background, clean studio lighting, professional photography";
+                    
+                    switch (selectedImageType) {
+                      case "portrait":
+                        // 肖像图：正面头像特写
+                        enhancedPrompt = `${basePrompt}${backgroundPrompt}，front view portrait, head and shoulders close-up, facing camera directly, clear facial features, centered composition`;
+                        break;
+                      case "fullbody":
+                        // 全身图：完整人物形象
+                        enhancedPrompt = `${basePrompt}${backgroundPrompt}，full body shot, standing pose, complete outfit visible, front view, full height`;
+                        break;
+                      case "combo":
+                        // 组合图：左侧肖像特写 + 右侧全身三视图
+                        enhancedPrompt = `${basePrompt}${backgroundPrompt}，character reference sheet, left side: front portrait close-up head and shoulders, right side: full body three views (front, side, back), multiple angles in one image, professional character design sheet`;
+                        break;
+                      case "fullbody-threeview":
+                        // 全身三视图：正、侧、背
+                        enhancedPrompt = `${basePrompt}${backgroundPrompt}，full body three views, front view, side profile, back view, standing pose, complete outfit from all angles, character turnaround sheet`;
+                        break;
+                      case "closeup-threeview":
+                        // 特写三视图：头肩正、侧、背
+                        enhancedPrompt = `${basePrompt}${backgroundPrompt}，head and shoulders three views, front face, left side profile, right side profile, close-up portrait from multiple angles`;
+                        break;
+                      default:
+                        enhancedPrompt = `${basePrompt}${backgroundPrompt}`;
+                    }
+
                     const response = await fetch("/api/ai/generate-image", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        prompt: prompt.trim() || `${character.name}，${character.appearance}，${character.description?.substring(0, 100) || ""}`,
+                        prompt: enhancedPrompt,
                         style: styleValue,
                         type: "character",
                         aspectRatio: aspectRatio,
