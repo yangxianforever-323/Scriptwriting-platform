@@ -67,44 +67,82 @@ function calculateSize(aspectRatio?: string, resolution?: string) {
   let width = 1024;
   let height = 1024;
 
-  if (resolution) {
+  // 根据宽高比和分辨率计算尺寸
+  if (aspectRatio === "2:1") {
+    // 全景图 2:1 比例
     switch (resolution) {
       case "1K":
-        width = 1024;
-        height = 1024;
+        width = 1500;
+        height = 750;
         break;
       case "2K":
-        width = 1792;
-        height = 1024;
+        width = 2000;
+        height = 1000;
         break;
-      case "4K":
-        width = 2048;
-        height = 1536;
+      case "3K":
+        width = 3000;
+        height = 1500;
         break;
-      case "8K":
-        width = 3072;
-        height = 2048;
-        break;
+      default:
+        width = 2000;
+        height = 1000;
     }
-  }
-
-  if (aspectRatio && aspectRatio !== "custom") {
-    switch (aspectRatio) {
-      case "1:1":
-        height = width;
+  } else if (aspectRatio === "16:9") {
+    // 场景图 16:9 比例
+    switch (resolution) {
+      case "1K":
+        width = 1920;
+        height = 1080;
         break;
-      case "16:9":
-        height = Math.round(width * 9 / 16);
+      case "2K":
+        width = 2048;
+        height = 1080;
         break;
-      case "9:16": {
-        const tempHeight = height;
-        height = width;
-        width = tempHeight;
-        break;
+      default:
+        width = 1920;
+        height = 1080;
+    }
+  } else {
+    // 其他比例使用原有逻辑
+    if (resolution) {
+      switch (resolution) {
+        case "1K":
+          width = 1024;
+          height = 1024;
+          break;
+        case "2K":
+          width = 1792;
+          height = 1024;
+          break;
+        case "4K":
+          width = 2048;
+          height = 1536;
+          break;
+        case "8K":
+          width = 3072;
+          height = 2048;
+          break;
       }
-      case "4:3":
-        height = Math.round(width * 3 / 4);
-        break;
+    }
+
+    if (aspectRatio && aspectRatio !== "custom") {
+      switch (aspectRatio) {
+        case "1:1":
+          height = width;
+          break;
+        case "9:16": {
+          const tempHeight = height;
+          height = width;
+          width = tempHeight;
+          break;
+        }
+        case "4:3":
+          height = Math.round(width * 3 / 4);
+          break;
+        case "3:4":
+          width = Math.round(height * 3 / 4);
+          break;
+      }
     }
   }
 

@@ -1594,11 +1594,33 @@ export function LocationGeneratePanel({
                           }
                         };
                         
+                        // 标记菜单是否已移除，防止重复移除
+                        let menuRemoved = false;
+                        
+                        // 安全移除菜单的辅助函数
+                        const safeRemoveMenu = () => {
+                          if (!menuRemoved && document.body.contains(menu)) {
+                            menuRemoved = true;
+                            document.body.removeChild(menu);
+                          }
+                          document.removeEventListener('click', closeMenu);
+                        };
+                        
+                        // 点击其他地方关闭菜单
+                        const closeMenu = (event?: MouseEvent) => {
+                          // 如果点击的是菜单内部，不关闭
+                          if (event && menu.contains(event.target as Node)) {
+                            return;
+                          }
+                          safeRemoveMenu();
+                        };
+                        
                         // 保存图片选项
                         const saveItem = document.createElement('button');
                         saveItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
                         saveItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>保存图片`;
-                        saveItem.onclick = () => {
+                        saveItem.onclick = (e) => {
+                          e.stopPropagation();
                           const link = document.createElement('a');
                           link.href = img;
                           link.download = `${location.name || 'image'}_${ANGLE_LABELS[selectedAngle]}_${idx + 1}.png`;
@@ -1612,7 +1634,8 @@ export function LocationGeneratePanel({
                         const copyItem = document.createElement('button');
                         copyItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
                         copyItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>复制图片地址`;
-                        copyItem.onclick = () => {
+                        copyItem.onclick = (e) => {
+                          e.stopPropagation();
                           navigator.clipboard.writeText(img);
                           safeRemoveMenu();
                         };
@@ -1621,7 +1644,8 @@ export function LocationGeneratePanel({
                         const openItem = document.createElement('button');
                         openItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
                         openItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>在新标签页打开`;
-                        openItem.onclick = () => {
+                        openItem.onclick = (e) => {
+                          e.stopPropagation();
                           window.open(img, '_blank');
                           safeRemoveMenu();
                         };
@@ -1631,14 +1655,8 @@ export function LocationGeneratePanel({
                         menu.appendChild(openItem);
                         document.body.appendChild(menu);
                         
-                        // 点击其他地方关闭菜单
-                        const closeMenu = () => {
-                          if (document.body.contains(menu)) {
-                            document.body.removeChild(menu);
-                          }
-                          document.removeEventListener('click', closeMenu);
-                        };
-                        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+                        // 延迟添加点击事件监听，避免立即触发
+                        setTimeout(() => document.addEventListener('click', closeMenu), 100);
                       }}
                       className={`aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group ${
                         confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
