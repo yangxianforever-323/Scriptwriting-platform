@@ -202,9 +202,16 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
 
       if (options.referenceImages && options.referenceImages.length > 0) {
         options.referenceImages.forEach((img) => {
+          // 确保图片URL是完整的URL
+          let imageUrl = img;
+          if (img.startsWith('/')) {
+            // 如果是相对路径，转换为完整URL
+            imageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${img}`;
+          }
+          console.log(`Adding reference image: ${imageUrl.substring(0, 100)}...`);
           userContent.push({
             type: "image_url",
-            image_url: { url: img },
+            image_url: { url: imageUrl },
           });
         });
       }
