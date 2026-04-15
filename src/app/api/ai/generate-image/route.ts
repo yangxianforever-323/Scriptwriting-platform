@@ -101,6 +101,8 @@ export async function POST(request: Request) {
           customStyleSuffix: variation.prompt,
         });
 
+        console.log(`Image ${index + 1} result:`, result);
+
         if (result && result.length > 0) {
           const fileName = `generated-${timestamp}-${index}.png`;
           const url = saveBase64Image(result[0], fileName);
@@ -111,6 +113,7 @@ export async function POST(request: Request) {
         return null;
       } catch (error) {
         console.error(`Error generating image ${index + 1}:`, error);
+        console.error(`Error stack:`, error instanceof Error ? error.stack : 'No stack');
         return null;
       }
     });

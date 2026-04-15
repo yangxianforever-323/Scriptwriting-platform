@@ -1340,9 +1340,12 @@ export function LocationGeneratePanel({
                         : `${basePrompt}，360 degree panoramic view, equirectangular projection, seamless spherical panorama, immersive environment, continuous wrap-around view, high dynamic range, HDR lighting`;
                       
                       console.log("Panorama generation request:", {
-                        prompt: panoramaPrompt.substring(0, 100) + "...",
+                        prompt: panoramaPrompt,
+                        promptLength: panoramaPrompt.length,
                         referenceImagesCount: refUrls.length,
                         aspectRatio: "2:1",
+                        resolution: panoramaResolution,
+                        refUrls: refUrls,
                       });
                       
                       const response = await fetch("/api/ai/generate-image", {
@@ -1359,7 +1362,7 @@ export function LocationGeneratePanel({
                         }),
                       });
                       const result = await response.json();
-                      console.log("Panorama generation response:", result);
+                      console.log("Panorama generation response:", JSON.stringify(result, null, 2));
                       
                       if (!response.ok) throw new Error(result.error || "全景图生成失败");
                       
