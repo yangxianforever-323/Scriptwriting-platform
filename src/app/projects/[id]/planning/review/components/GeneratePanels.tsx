@@ -1360,6 +1360,7 @@ export function LocationGeneratePanel({
                           resolution: panoramaResolution,
                           count: 1,
                           referenceImages: refUrls,
+                          model: "gemini-3.1-pro-preview",  // 使用Pro版本生成全景图
                         }),
                       });
                       const result = await response.json();

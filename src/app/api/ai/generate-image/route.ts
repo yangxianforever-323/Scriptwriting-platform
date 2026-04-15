@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { prompt, style, type, aspectRatio, resolution, count = 1, referenceImages = [] } = body;
+    const { prompt, style, type, aspectRatio, resolution, count = 1, referenceImages = [], model } = body;
 
     if (!prompt) {
       return NextResponse.json(
@@ -99,6 +99,7 @@ export async function POST(request: Request) {
           resolution,
           referenceImages,
           customStyleSuffix: variation.prompt,
+          model,
         });
 
         console.log(`Image ${index + 1} result:`, result);
