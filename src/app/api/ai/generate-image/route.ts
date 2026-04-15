@@ -112,9 +112,10 @@ export async function POST(request: Request) {
         console.warn(`Image ${index + 1} returned empty result`);
         return null;
       } catch (error) {
-        console.error(`Error generating image ${index + 1}:`, error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Error generating image ${index + 1}:`, errorMessage);
         console.error(`Error stack:`, error instanceof Error ? error.stack : 'No stack');
-        return null;
+        return { error: errorMessage, style: variation.name };
       }
     });
 
@@ -122,20 +123,27 @@ export async function POST(request: Request) {
     const results = await Promise.all(generatePromises);
     console.log(`All promises resolved. Results:`, results);
 
-    // 收集成功生成的图片
+    // 收集成功生成的图片和错误信息
+    const errors: string[] = [];
     for (const result of results) {
-      if (result) {
+      if (result && 'url' in result) {
         images.push(result);
+      } else if (result && 'error' in result) {
+        errors.push(result.error as string);
       }
     }
 
     console.log(`Generated ${images.length} images successfully out of ${count} requested`);
+    if (errors.length > 0) {
+      console.log(`Errors encountered:`, errors);
+    }
 
     return NextResponse.json({
-      success: true,
+      success: images.length > 0,
       images,
       count: images.length,
       totalRequested: count,
+      errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
     console.error("Error generating image:", error);

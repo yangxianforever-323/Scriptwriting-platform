@@ -286,13 +286,15 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
       }
 
       if (images.length === 0) {
-        console.log("Response content:", content.slice(0, 500));
+        console.log("Response content preview:", content.slice(0, 1000));
+        console.log("Response content length:", content.length);
+        console.log("Response starts with:", content.substring(0, 100));
         if (attempt < MAX_RETRIES) {
           console.warn(`Attempt ${attempt} returned text instead of image, retrying...`);
           await sleep(RETRY_DELAY_MS * attempt);
           continue;
         }
-        throw new GeminiImageApiError("No image found in response");
+        throw new GeminiImageApiError(`No image found in response. Content type: ${content.startsWith('data:image') ? 'data URL' : content.startsWith('http') ? 'URL' : 'text'}, length: ${content.length}`);
       }
 
       return images;
