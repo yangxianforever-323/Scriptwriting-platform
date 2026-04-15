@@ -1176,66 +1176,134 @@ export function LocationGeneratePanel({
               </div>
             )}
 
-            {/* Generate Button - Only in generate tab */}
+            {/* Generate Buttons - Only in generate tab */}
             {activeTab === "generate" && (
-              <button
-                onClick={async () => {
-                  setGenerating(true);
-                  setGeneratedImages([]);
-                  setConfirmedImage(null);
-                  try {
-                    const angleLabel = ANGLE_LABELS[selectedAngle] || "广角全景";
-                    const prompt = locationPrompt.trim() ||
-                      `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}，${angleLabel}`;
-                    const refUrls = referenceImages.map(img => img.url);
-                    const response = await fetch("/api/ai/generate-image", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        prompt,
-                        style: "realistic",
-                        type: "location",
-                        aspectRatio: "16:9",
-                        resolution: "2K",
-                        count: 2,
-                        referenceImages: refUrls,
-                      }),
-                    });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error || "图片生成失败");
-                    let images: string[] = [];
-                    if (result.images && Array.isArray(result.images)) {
-                      images = result.images.map((img: any) => img.url || img);
-                    } else if (result.url) {
-                      images = [result.url];
+              <div className="space-y-2">
+                {/* Normal Generate Button */}
+                <button
+                  onClick={async () => {
+                    setGenerating(true);
+                    setGeneratedImages([]);
+                    setConfirmedImage(null);
+                    try {
+                      const angleLabel = ANGLE_LABELS[selectedAngle] || "广角全景";
+                      const prompt = locationPrompt.trim() ||
+                        `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}，${angleLabel}`;
+                      const refUrls = referenceImages.map(img => img.url);
+                      const response = await fetch("/api/ai/generate-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          prompt,
+                          style: "realistic",
+                          type: "location",
+                          aspectRatio: "16:9",
+                          resolution: "2K",
+                          count: 2,
+                          referenceImages: refUrls,
+                        }),
+                      });
+                      const result = await response.json();
+                      if (!response.ok) throw new Error(result.error || "图片生成失败");
+                      let images: string[] = [];
+                      if (result.images && Array.isArray(result.images)) {
+                        images = result.images.map((img: any) => img.url || img);
+                      } else if (result.url) {
+                        images = [result.url];
+                      }
+                      if (images.length > 0) {
+                        setGeneratedImages(images);
+                      } else {
+                        throw new Error("未返回有效图片");
+                      }
+                    } catch (error) {
+                      console.error("Location image generation error:", error);
+                      alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
+                    } finally {
+                      setGenerating(false);
                     }
-                    if (images.length > 0) {
-                      setGeneratedImages(images);
-                    } else {
-                      throw new Error("未返回有效图片");
+                  }}
+                  disabled={generating}
+                  className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
+                >
+                  {generating ? (
+                    <>
+                      <Spinner size="sm" />
+                      正在生成中...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      开始生成
+                    </>
+                  )}
+                </button>
+
+                {/* 360 Panorama Generate Button */}
+                <button
+                  onClick={async () => {
+                    setGenerating(true);
+                    setGeneratedImages([]);
+                    setConfirmedImage(null);
+                    try {
+                      // 构建全景图提示词
+                      const basePrompt = locationPrompt.trim() ||
+                        `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}`;
+                      const panoramaPrompt = `${basePrompt}，360 degree panoramic view, equirectangular projection, seamless spherical panorama, immersive environment, continuous wrap-around view, high dynamic range, HDR lighting`;
+                      
+                      const refUrls = referenceImages.map(img => img.url);
+                      const response = await fetch("/api/ai/generate-image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          prompt: panoramaPrompt,
+                          style: "realistic",
+                          type: "location",
+                          aspectRatio: "2:1",  // 全景图标准比例
+                          resolution: "2K",
+                          count: 1,
+                          referenceImages: refUrls,
+                        }),
+                      });
+                      const result = await response.json();
+                      if (!response.ok) throw new Error(result.error || "全景图生成失败");
+                      let images: string[] = [];
+                      if (result.images && Array.isArray(result.images)) {
+                        images = result.images.map((img: any) => img.url || img);
+                      } else if (result.url) {
+                        images = [result.url];
+                      }
+                      if (images.length > 0) {
+                        setGeneratedImages(images);
+                        // 标记为全景图类型
+                        alert("360度全景图生成成功！\n\n提示：\n1. 右键点击图片可保存\n2. 可在VR/3D软件中使用等距圆柱投影格式\n3. 建议使用专业软件转换为HDR格式");
+                      } else {
+                        throw new Error("未返回有效图片");
+                      }
+                    } catch (error) {
+                      console.error("Panorama generation error:", error);
+                      alert(`全景图生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
+                    } finally {
+                      setGenerating(false);
                     }
-                  } catch (error) {
-                    console.error("Location image generation error:", error);
-                    alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
-                  } finally {
-                    setGenerating(false);
-                  }
-                }}
-                disabled={generating}
-                className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
-              >
-                {generating ? (
-                  <>
-                    <Spinner size="sm" />
-                    正在生成中...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                    开始生成
-                  </>
-                )}
-              </button>
+                  }}
+                  disabled={generating}
+                  className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
+                >
+                  {generating ? (
+                    <>
+                      <Spinner size="sm" />
+                      生成全景图中...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      生成360°全景图
+                    </>
+                  )}
+                </button>
+                <p className="text-[10px] text-zinc-500 text-center">全景图采用2:1等距圆柱投影格式，适用于VR/3D场景</p>
+              </div>
             )}
 
             {/* Action Buttons */}
@@ -1412,6 +1480,60 @@ export function LocationGeneratePanel({
                     <div
                       key={idx}
                       onClick={() => setConfirmedImage(img)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        // 创建右键菜单
+                        const menu = document.createElement('div');
+                        menu.className = 'fixed bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-50 min-w-[140px]';
+                        menu.style.left = `${e.clientX}px`;
+                        menu.style.top = `${e.clientY}px`;
+                        
+                        // 保存图片选项
+                        const saveItem = document.createElement('button');
+                        saveItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
+                        saveItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>保存图片`;
+                        saveItem.onclick = () => {
+                          const link = document.createElement('a');
+                          link.href = img;
+                          link.download = `${location.name || 'image'}_${ANGLE_LABELS[selectedAngle]}_${idx + 1}.png`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          document.body.removeChild(menu);
+                        };
+                        
+                        // 复制图片地址选项
+                        const copyItem = document.createElement('button');
+                        copyItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
+                        copyItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>复制图片地址`;
+                        copyItem.onclick = () => {
+                          navigator.clipboard.writeText(img);
+                          document.body.removeChild(menu);
+                        };
+                        
+                        // 在新标签页打开
+                        const openItem = document.createElement('button');
+                        openItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
+                        openItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>在新标签页打开`;
+                        openItem.onclick = () => {
+                          window.open(img, '_blank');
+                          document.body.removeChild(menu);
+                        };
+                        
+                        menu.appendChild(saveItem);
+                        menu.appendChild(copyItem);
+                        menu.appendChild(openItem);
+                        document.body.appendChild(menu);
+                        
+                        // 点击其他地方关闭菜单
+                        const closeMenu = () => {
+                          if (document.body.contains(menu)) {
+                            document.body.removeChild(menu);
+                          }
+                          document.removeEventListener('click', closeMenu);
+                        };
+                        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+                      }}
                       className={`aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group ${
                         confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
                       }`}
