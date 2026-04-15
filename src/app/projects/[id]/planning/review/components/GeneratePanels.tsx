@@ -901,8 +901,27 @@ export function LocationGeneratePanel({
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [confirmedImage, setConfirmedImage] = useState<string | null>(null);
   const [locationPrompt, setLocationPrompt] = useState("");
+  
+  // 分辨率选择状态
+  // 普通场景图分辨率: 1K (1920x1080), 2K (2048x1080)
+  const [sceneResolution, setSceneResolution] = useState<"1K" | "2K">("2K");
+  // 全景图分辨率: 1K (1500x750), 2K (2000x1000), 3K (3000x1500)
+  const [panoramaResolution, setPanoramaResolution] = useState<"1K" | "2K" | "3K">("2K");
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 分辨率配置
+  const SCENE_RESOLUTIONS = {
+    "1K": { label: "1K", width: 1920, height: 1080, desc: "1920×1080" },
+    "2K": { label: "2K", width: 2048, height: 1080, desc: "2048×1080" },
+  };
+  
+  const PANORAMA_RESOLUTIONS = {
+    "1K": { label: "1K", width: 1500, height: 750, desc: "1500×750" },
+    "2K": { label: "2K", width: 2000, height: 1000, desc: "2000×1000" },
+    "3K": { label: "3K", width: 3000, height: 1500, desc: "3000×1500" },
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1178,7 +1197,31 @@ export function LocationGeneratePanel({
 
             {/* Generate Buttons - Only in generate tab */}
             {activeTab === "generate" && (
-              <div className="space-y-2">
+              <div className="space-y-3">
+                {/* Scene Resolution Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-zinc-400">场景图分辨率</label>
+                    <span className="text-[10px] text-zinc-500">{SCENE_RESOLUTIONS[sceneResolution].desc}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(Object.keys(SCENE_RESOLUTIONS) as Array<"1K" | "2K">).map((res) => (
+                      <button
+                        key={res}
+                        onClick={() => setSceneResolution(res)}
+                        className={`py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                          sceneResolution === res
+                            ? "bg-green-600 text-white"
+                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                        }`}
+                      >
+                        {SCENE_RESOLUTIONS[res].label}
+                        <span className="block text-[9px] opacity-70">{SCENE_RESOLUTIONS[res].desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Normal Generate Button */}
                 <button
                   onClick={async () => {
@@ -1198,7 +1241,7 @@ export function LocationGeneratePanel({
                           style: "realistic",
                           type: "location",
                           aspectRatio: "16:9",
-                          resolution: "2K",
+                          resolution: sceneResolution,
                           count: 2,
                           referenceImages: refUrls,
                         }),
@@ -1234,10 +1277,34 @@ export function LocationGeneratePanel({
                   ) : (
                     <>
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      开始生成
+                      开始生成 ({sceneResolution})
                     </>
                   )}
                 </button>
+
+                {/* Panorama Resolution Selector */}
+                <div className="pt-2 border-t border-zinc-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-zinc-400">全景图分辨率</label>
+                    <span className="text-[10px] text-zinc-500">{PANORAMA_RESOLUTIONS[panoramaResolution].desc}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(Object.keys(PANORAMA_RESOLUTIONS) as Array<"1K" | "2K" | "3K">).map((res) => (
+                      <button
+                        key={res}
+                        onClick={() => setPanoramaResolution(res)}
+                        className={`py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                          panoramaResolution === res
+                            ? "bg-purple-600 text-white"
+                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                        }`}
+                      >
+                        {PANORAMA_RESOLUTIONS[res].label}
+                        <span className="block text-[9px] opacity-70">{PANORAMA_RESOLUTIONS[res].desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* 360 Panorama Generate Button */}
                 <button
@@ -1286,7 +1353,7 @@ export function LocationGeneratePanel({
                           style: "realistic",
                           type: "location",
                           aspectRatio: "2:1",  // 全景图标准比例
-                          resolution: "2K",
+                          resolution: panoramaResolution,
                           count: 1,
                           referenceImages: refUrls,
                         }),
@@ -1330,7 +1397,7 @@ export function LocationGeneratePanel({
                   ) : (
                     <>
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      生成360°全景图
+                      生成360°全景图 ({panoramaResolution})
                     </>
                   )}
                 </button>
