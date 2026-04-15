@@ -1979,10 +1979,15 @@ export function SceneGeneratePanel({
         }),
       });
       const result = await response.json();
+      console.log("Scene image generation result:", result);
       if (!response.ok) throw new Error(result.error || "图片生成失败");
+      if (result.errors && result.errors.length > 0) {
+        console.warn("Scene image generation warnings:", result.errors);
+      }
       const img = result.images?.[0]?.url || result.images?.[0] || result.url;
+      console.log("Extracted image URL:", img, "Images array:", result.images);
       if (img) onUpdate({ thumbnailUrl: img });
-      else throw new Error("未返回有效图片");
+      else throw new Error(`未返回有效图片。API响应: ${JSON.stringify(result)}`);
     } catch (error) {
       console.error("Scene image generation error:", error);
       alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
