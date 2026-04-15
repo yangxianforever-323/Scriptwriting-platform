@@ -509,6 +509,14 @@ export async function generateImageWithStyle(
 
   const fullPrompt = `${basePrompt}${stylePrompt}${customSuffix ? `. ${customSuffix}` : ""}`;
 
+  console.log("generateImageWithStyle called with:", {
+    basePromptLength: basePrompt.length,
+    fullPromptLength: fullPrompt.length,
+    aspectRatio: options.aspectRatio,
+    resolution: options.resolution,
+    referenceImagesCount: options.referenceImages?.length || 0,
+  });
+
   return generateImage(fullPrompt, {
     style: options.style,
     type: options.type,

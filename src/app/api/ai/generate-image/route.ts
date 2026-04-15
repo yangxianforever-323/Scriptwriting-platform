@@ -107,6 +107,7 @@ export async function POST(request: Request) {
           console.log(`Image ${index + 1} generated successfully: ${url}`);
           return { url, style: variation.name };
         }
+        console.warn(`Image ${index + 1} returned empty result`);
         return null;
       } catch (error) {
         console.error(`Error generating image ${index + 1}:`, error);
@@ -114,7 +115,9 @@ export async function POST(request: Request) {
       }
     });
 
+    console.log(`Waiting for ${generatePromises.length} promises to resolve...`);
     const results = await Promise.all(generatePromises);
+    console.log(`All promises resolved. Results:`, results);
 
     // 收集成功生成的图片
     for (const result of results) {
