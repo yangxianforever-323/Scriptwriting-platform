@@ -902,11 +902,17 @@ export function LocationGeneratePanel({
   const [confirmedImage, setConfirmedImage] = useState<string | null>(null);
   const [locationPrompt, setLocationPrompt] = useState("");
   
-  // 分辨率选择状态
+  // 生成分辨率选择状态
   // 普通场景图分辨率: 1K (1920x1080), 2K (2048x1080)
   const [sceneResolution, setSceneResolution] = useState<"1K" | "2K">("2K");
   // 全景图分辨率: 1K (1500x750), 2K (2000x1000), 3K (3000x1500)
   const [panoramaResolution, setPanoramaResolution] = useState<"1K" | "2K" | "3K">("2K");
+  
+  // 生成图片类型：'normal' 普通场景图, 'panorama' 全景图
+  const [generatedImageType, setGeneratedImageType] = useState<'normal' | 'panorama' | null>(null);
+  
+  // 保存图片时选择的视角位置
+  const [saveToAngle, setSaveToAngle] = useState<number>(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -1256,6 +1262,8 @@ export function LocationGeneratePanel({
                       }
                       if (images.length > 0) {
                         setGeneratedImages(images);
+                        setGeneratedImageType('normal');
+                        setSaveToAngle(selectedAngle); // 默认保存到当前选中的视角
                       } else {
                         throw new Error("未返回有效图片");
                       }
@@ -1379,6 +1387,8 @@ export function LocationGeneratePanel({
                       
                       if (images.length > 0) {
                         setGeneratedImages(images);
+                        setGeneratedImageType('panorama');
+                        setSaveToAngle(0); // 全景图固定保存到广角全景(索引0)
                         // 标记为全景图类型
                         alert(`360度全景图生成成功！${sourceImage ? '\n\n已基于当前视角图片进行扩展生成。' : ''}\n\n提示：\n1. 右键点击图片可保存\n2. 可在VR/3D软件中使用等距圆柱投影格式\n3. 建议使用专业软件转换为HDR格式`);
                       } else {
@@ -1683,48 +1693,96 @@ export function LocationGeneratePanel({
           </div>
 
           {/* Bottom Toolbar */}
-          <div className="p-4 border-t border-zinc-800 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-zinc-500">
-                参考图: {referenceImages.length}张
-                {activeImage && <> · 已选: {activeImage.tags.length}个标签</>}
-                {confirmedImage && <span className="text-green-400"> · 已选图片</span>}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              {confirmedImage && (
+          <div className="p-4 border-t border-zinc-800 space-y-3">
+            {/* 保存位置选择器 - 只在有生成图片时显示 */}
+            {generatedImages.length > 0 && (
+              <div className="flex items-center gap-3 pb-3 border-b border-zinc-700/50">
+                <span className="text-xs text-zinc-400">保存到:</span>
+                <div className="flex gap-2">
+                  {ANGLE_LABELS.map((label, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSaveToAngle(i)}
+                      disabled={generatedImageType === 'panorama' && i !== 0} // 全景图只能保存到广角全景
+                      className={`px-2 py-1 text-[10px] rounded transition-all ${
+                        saveToAngle === i
+                          ? generatedImageType === 'panorama'
+                            ? "bg-purple-600 text-white"
+                            : "bg-green-600 text-white"
+                          : generatedImageType === 'panorama' && i !== 0
+                            ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                      }`}
+                      title={generatedImageType === 'panorama' && i !== 0 ? "全景图只能保存到广角全景" : `保存到${label}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {generatedImageType === 'panorama' && (
+                  <span className="text-[10px] text-purple-400">(全景图固定保存到广角全景)</span>
+                )}
+              </div>
+            )}
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-zinc-500">
+                  参考图: {referenceImages.length}张
+                  {activeImage && <> · 已选: {activeImage.tags.length}个标签</>}
+                  {confirmedImage && <span className="text-green-400"> · 已选图片</span>}
+                  {generatedImageType && (
+                    <span className={generatedImageType === 'panorama' ? "text-purple-400" : "text-green-400"}>
+                      · {generatedImageType === 'panorama' ? '全景图' : '场景图'}
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                {confirmedImage && (
+                  <button
+                    onClick={() => { 
+                      setConfirmedImage(null); 
+                      setGeneratedImages([]); 
+                      setGeneratedImageType(null);
+                    }}
+                    className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded-lg hover:bg-red-900/30 flex items-center gap-1"
+                  >
+                    重新生成
+                  </button>
+                )}
                 <button
-                  onClick={() => { setConfirmedImage(null); setGeneratedImages([]); }}
-                  className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded-lg hover:bg-red-900/30 flex items-center gap-1"
+                  onClick={() => {
+                    const img = confirmedImage || generatedImages[0];
+                    if (!img) { alert("请先生成并选择图片"); return; }
+                    
+                    // 使用用户选择的保存位置
+                    const viewKey = VIEW_TYPE_MAP[saveToAngle];
+                    const currentViewImages = location.viewImages || {};
+                    
+                    // 更新对应视角的图片，同时更新 thumbnailUrl 为当前图片
+                    onUpdate({ 
+                      thumbnailUrl: img,
+                      viewImages: {
+                        ...currentViewImages,
+                        [viewKey]: img,
+                      }
+                    });
+                    
+                    // 重置状态
+                    setGeneratedImageType(null);
+                    setConfirmedImage(null);
+                    setGeneratedImages([]);
+                    
+                    onClose();
+                  }}
+                  disabled={generating}
+                  className="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 flex items-center gap-1.5"
                 >
-                  重新生成
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  确认使用 ({ANGLE_LABELS[saveToAngle]})
                 </button>
-              )}
-              <button
-                onClick={() => {
-                  const img = confirmedImage || generatedImages[0];
-                  if (!img) { alert("请先生成并选择图片"); return; }
-                  
-                  // 获取当前选中的视角类型
-                  const viewKey = VIEW_TYPE_MAP[selectedAngle];
-                  const currentViewImages = location.viewImages || {};
-                  
-                  // 更新对应视角的图片，同时更新 thumbnailUrl 为当前图片
-                  onUpdate({ 
-                    thumbnailUrl: img,
-                    viewImages: {
-                      ...currentViewImages,
-                      [viewKey]: img,
-                    }
-                  });
-                  onClose();
-                }}
-                disabled={generating}
-                className="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 flex items-center gap-1.5"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                确认使用
-              </button>
+              </div>
             </div>
           </div>
         </div>
