@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Spinner } from "@/components/ui/Spinner";
-import { ImageViewer, ClickableImage } from "@/components/ui/ImageViewer";
 
 // ============================================
 // Character Generate Panel (Enhanced)
@@ -27,6 +26,7 @@ interface CharacterGeneratePanelProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updates: any) => void;
+  onViewImage?: (src: string, alt?: string) => void;
 }
 
 const IMAGE_TYPES = [
@@ -57,6 +57,7 @@ export function CharacterGeneratePanel({
   isOpen,
   onClose,
   onUpdate,
+  onViewImage,
 }: CharacterGeneratePanelProps) {
   const [activeTab, setActiveTab] = useState<"edit" | "generate">("generate");
   const [generating, setGenerating] = useState(false);
@@ -75,9 +76,6 @@ export function CharacterGeneratePanel({
   
   // 保存位置选择状态
   const [saveToImageType, setSaveToImageType] = useState<string>(selectedImageType);
-  
-  // 图片查看器状态
-  const [viewerImage, setViewerImage] = useState<string | null>(null);
   
   // 获取当前类型生成的图片
   const generatedImages = generatedImagesByType[selectedImageType] || [];
@@ -574,7 +572,7 @@ export function CharacterGeneratePanel({
                           className="w-full h-full object-cover"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setViewerImage(img);
+                            onViewImage?.(img, `生成的图片 ${idx + 1}`);
                           }}
                         />
                         {/* 选择按钮 */}
@@ -597,7 +595,7 @@ export function CharacterGeneratePanel({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setViewerImage(img);
+                            onViewImage?.(img, `生成的图片 ${idx + 1}`);
                           }}
                           className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-blue-600 flex items-center justify-center transition-all"
                         >
@@ -926,14 +924,6 @@ export function CharacterGeneratePanel({
         </div>
       </div>
     </div>
-    
-    {/* Image Viewer */}
-    <ImageViewer
-      src={viewerImage || ""}
-      alt="生成的图片"
-      isOpen={!!viewerImage}
-      onClose={() => setViewerImage(null)}
-    />
   );
 }
 
@@ -964,6 +954,7 @@ interface LocationGeneratePanelProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updates: any) => void;
+  onViewImage?: (src: string, alt?: string) => void;
 }
 
 // View type mapping: index -> view key
@@ -992,6 +983,7 @@ export function LocationGeneratePanel({
   isOpen,
   onClose,
   onUpdate,
+  onViewImage,
 }: LocationGeneratePanelProps) {
   const [activeTab, setActiveTab] = useState<"edit" | "generate">("edit");
   const [selectedAngle, setSelectedAngle] = useState(0);
@@ -1013,9 +1005,6 @@ export function LocationGeneratePanel({
   
   // 保存图片时选择的视角位置
   const [saveToAngle, setSaveToAngle] = useState<number>(0);
-  
-  // 图片查看器状态
-  const [viewerImage, setViewerImage] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -1790,14 +1779,14 @@ export function LocationGeneratePanel({
                         className="w-full h-full object-cover"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setViewerImage(img);
+                          onViewImage?.(img, `生成的图片`);
                         }}
                       />
                       {/* 放大按钮 */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setViewerImage(img);
+                          onViewImage?.(img, `生成的图片`);
                         }}
                         className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-blue-600 flex items-center justify-center transition-all z-10"
                       >
@@ -1938,14 +1927,6 @@ export function LocationGeneratePanel({
         </div>
       </div>
     </div>
-    
-    {/* Image Viewer */}
-    <ImageViewer
-      src={viewerImage || ""}
-      alt="生成的图片"
-      isOpen={!!viewerImage}
-      onClose={() => setViewerImage(null)}
-    />
   );
 }
 
@@ -1990,6 +1971,7 @@ interface ActVisualEditorProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updates: any) => void;
+  onViewImage?: (src: string, alt?: string) => void;
 }
 
 const PROP_TYPE_OPTIONS = [
@@ -2023,6 +2005,7 @@ export function SceneGeneratePanel({
   isOpen,
   onClose,
   onUpdate,
+  onViewImage,
 }: ActVisualEditorProps) {
   const [activeSection, setActiveSection] = useState<"visual" | "characters" | "locations" | "props" | "atmosphere">("visual");
   const [newPropName, setNewPropName] = useState("");
@@ -2031,9 +2014,6 @@ export function SceneGeneratePanel({
   const [newPropHolder, setNewPropHolder] = useState("");
   const [sceneGenerating, setSceneGenerating] = useState(false);
   const sceneUploadRef = useRef<HTMLInputElement>(null);
-  
-  // 图片查看器状态
-  const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   const handleSceneUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2739,13 +2719,13 @@ export function SceneGeneratePanel({
                     src={scene.thumbnailUrl} 
                     alt={scene.title} 
                     className="max-h-[360px] max-w-full object-contain rounded-lg shadow-xl cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={() => setViewerImage(scene.thumbnailUrl!)}
+                    onClick={() => onViewImage?.(scene.thumbnailUrl!, scene.title)}
                   />
                   {/* 放大按钮 */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setViewerImage(scene.thumbnailUrl!);
+                      onViewImage?.(scene.thumbnailUrl!, scene.title);
                     }}
                     className="absolute bottom-2 left-2 w-8 h-8 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-blue-600 flex items-center justify-center transition-all"
                   >
@@ -2794,13 +2774,5 @@ export function SceneGeneratePanel({
         </div>
       </div>
     </div>
-    
-    {/* Image Viewer */}
-    <ImageViewer
-      src={viewerImage || ""}
-      alt="场景图片"
-      isOpen={!!viewerImage}
-      onClose={() => setViewerImage(null)}
-    />
   );
 }

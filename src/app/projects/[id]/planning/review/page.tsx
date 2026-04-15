@@ -4,6 +4,8 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StageNavigator } from "@/components/project/StageNavigator";
 import { Spinner } from "@/components/ui/Spinner";
+import { ImageViewer } from "@/components/ui/ImageViewer";
+import { useImageViewer } from "@/hooks/useImageViewer";
 import type { Project } from "@/types/database";
 import {
   CharacterGeneratePanel,
@@ -180,6 +182,9 @@ export default function ReviewAnalysisPage() {
   const [locationPanelIdx, setLocationPanelIdx] = useState<number | null>(null);
   const [scenePanelActIdx, setScenePanelActIdx] = useState<number | null>(null);
   const [scenePanelSceneIdx, setScenePanelSceneIdx] = useState<number | null>(null);
+
+  // Global Image Viewer
+  const { viewerImage, viewerAlt, openViewer, closeViewer, isOpen: viewerIsOpen } = useImageViewer();
 
   const [analysisData, setAnalysisData] = useState<AnalysisData>({
     title: "",
@@ -1214,6 +1219,7 @@ export default function ReviewAnalysisPage() {
             onUpdate={(updates) => {
               updateCharacter(characterPanelIdx, updates);
             }}
+            onViewImage={openViewer}
           />
         )}
 
@@ -1225,6 +1231,7 @@ export default function ReviewAnalysisPage() {
             onUpdate={(updates) => {
               updateLocation(locationPanelIdx, updates);
             }}
+            onViewImage={openViewer}
           />
         )}
 
@@ -1239,8 +1246,17 @@ export default function ReviewAnalysisPage() {
             onUpdate={(updates) => {
               updateScene(scenePanelActIdx, scenePanelSceneIdx, updates);
             }}
+            onViewImage={openViewer}
           />
         )}
+
+        {/* Global Image Viewer */}
+        <ImageViewer
+          src={viewerImage || ""}
+          alt={viewerAlt}
+          isOpen={viewerIsOpen}
+          onClose={closeViewer}
+        />
       </div>
     </div>
   );
