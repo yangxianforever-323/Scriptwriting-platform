@@ -1587,13 +1587,6 @@ export function LocationGeneratePanel({
                         menu.style.left = `${e.clientX}px`;
                         menu.style.top = `${e.clientY}px`;
                         
-                        // 安全移除菜单的辅助函数
-                        const safeRemoveMenu = () => {
-                          if (document.body.contains(menu)) {
-                            document.body.removeChild(menu);
-                          }
-                        };
-                        
                         // 标记菜单是否已移除，防止重复移除
                         let menuRemoved = false;
                         
