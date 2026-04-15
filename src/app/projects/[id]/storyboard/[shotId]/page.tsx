@@ -164,12 +164,13 @@ export default function ShotDetailPage() {
   };
 
   const handleGenerateVideo = async () => {
-    if (!shot || !shot.videoPrompt) {
-      alert("请先生成提示词");
+    if (!shot) return;
+    if (!shot.videoPrompt && !shot.imageUrl) {
+      alert("请先生成提示词或分镜图片");
       return;
     }
 
-    handleUpdate({ videoStatus: "generating" });
+    await handleUpdate({ videoStatus: "generating", videoTaskId: undefined });
 
     try {
       const response = await fetch("/api/generate/shot-video", {
@@ -177,24 +178,97 @@ export default function ShotDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shotId: shot.id,
-          prompt: shot.videoPrompt,
+          prompt: shot.videoPrompt || shot.description || "",
+          imageUrl: shot.imageUrl || "",
           storyboardId: shot.storyboardId,
+          ratio: "16:9",
+          duration: Math.min(Math.max(Math.round(shot.duration || 5), 3), 11),
+          generateAudio: false,
         }),
       });
 
-      if (!response.ok) throw new Error("生成失败");
-
       const result = await response.json();
-      handleUpdate({
-        videoStatus: "completed",
-        videoUrl: result.videoUrl,
-      });
+
+      if (!response.ok) {
+        throw new Error(result.error || "生成任务创建失败");
+      }
+
+      // Save the taskId and start polling
+      const taskId: string = result.taskId;
+      await handleUpdate({ videoStatus: "generating", videoTaskId: taskId });
+
+      // Poll every 5 seconds until done
+      const poll = async () => {
+        try {
+          const statusRes = await fetch(
+            `/api/generate/shot-video/status?taskId=${taskId}&shotId=${shot.id}`
+          );
+          const statusData = await statusRes.json();
+
+          if (statusData.status === "completed" && statusData.videoUrl) {
+            await handleUpdate({
+              videoStatus: "completed",
+              videoUrl: statusData.videoUrl,
+              videoTaskId: taskId,
+            });
+            return;
+          }
+
+          if (statusData.status === "failed") {
+            await handleUpdate({ videoStatus: "failed" });
+            alert(`视频生成失败: ${statusData.errorMessage || "未知错误"}`);
+            return;
+          }
+
+          // Still running — check again in 5s
+          setTimeout(poll, 5000);
+        } catch (pollError) {
+          console.error("Polling error:", pollError);
+          setTimeout(poll, 8000); // Retry with backoff
+        }
+      };
+
+      // Start polling after a brief delay
+      setTimeout(poll, 5000);
     } catch (error) {
-      console.error("Error generating video:", error);
-      handleUpdate({ videoStatus: "failed" });
-      alert("视频生成失败，请重试");
+      console.error("Error creating video task:", error);
+      await handleUpdate({ videoStatus: "failed" });
+      alert(`视频生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
     }
   };
+
+  // Resume polling on mount if shot is already in "generating" state with a taskId
+  useEffect(() => {
+    if (!shot || shot.videoStatus !== "generating" || !shot.videoTaskId) return;
+    const taskId = shot.videoTaskId;
+    const shotRef = shot;
+
+    const poll = async () => {
+      try {
+        const statusRes = await fetch(
+          `/api/generate/shot-video/status?taskId=${taskId}&shotId=${shotRef.id}`
+        );
+        const statusData = await statusRes.json();
+
+        if (statusData.status === "completed" && statusData.videoUrl) {
+          setShot((prev) =>
+            prev ? { ...prev, videoStatus: "completed", videoUrl: statusData.videoUrl } : prev
+          );
+          return;
+        }
+        if (statusData.status === "failed") {
+          setShot((prev) => (prev ? { ...prev, videoStatus: "failed" } : prev));
+          return;
+        }
+        setTimeout(poll, 5000);
+      } catch {
+        setTimeout(poll, 8000);
+      }
+    };
+
+    const timer = setTimeout(poll, 3000);
+    return () => clearTimeout(timer);
+  }, [shot?.videoTaskId, shot?.videoStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentIndex = allShots.findIndex((s) => s.id === shotId);
   const prevShot = currentIndex > 0 ? allShots[currentIndex - 1] : null;

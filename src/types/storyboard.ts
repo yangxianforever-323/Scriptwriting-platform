@@ -53,6 +53,7 @@ export interface Shot {
   videoUrl?: string;
   videoStatus: ShotVideoStatus;
   videoConfirmed: boolean;
+  videoTaskId?: string; // Volcengine async task ID for polling
   
   // Shot metadata (visual design)
   shotType: string;

@@ -1063,6 +1063,7 @@ export const shotStore = {
       videoUrl: data.videoUrl,
       videoStatus: (data.videoStatus as ShotVideoStatus) || "pending",
       videoConfirmed: data.videoConfirmed ?? false,
+      videoTaskId: data.videoTaskId,
       shotType: data.shotType || "MS",
       shotTypeName: data.shotTypeName || "中景",
       cameraPosition: data.cameraPosition,

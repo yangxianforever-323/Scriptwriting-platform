@@ -136,12 +136,12 @@ export function ShotEditor({ shot, story, projectId, onUpdate, onEditFull }: Sho
   };
 
   const handleGenerateVideo = async () => {
-    if (!localShot.videoPrompt) {
-      alert("请先生成提示词");
+    if (!localShot.videoPrompt && !localShot.imageUrl) {
+      alert("请先生成提示词或分镜图片");
       return;
     }
 
-    handleUpdate({ videoStatus: "generating" });
+    handleUpdate({ videoStatus: "generating", videoTaskId: undefined });
 
     try {
       const response = await fetch("/api/generate/shot-video", {
@@ -149,25 +149,48 @@ export function ShotEditor({ shot, story, projectId, onUpdate, onEditFull }: Sho
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shotId: localShot.id,
-          prompt: localShot.videoPrompt,
+          prompt: localShot.videoPrompt || localShot.description || "",
+          imageUrl: localShot.imageUrl || "",
           storyboardId: localShot.storyboardId,
+          ratio: "16:9",
+          duration: Math.min(Math.max(Math.round(localShot.duration || 5), 3), 11),
+          generateAudio: false,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("生成失败");
-      }
-
       const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "任务创建失败");
 
-      handleUpdate({
-        videoStatus: "completed",
-        videoUrl: result.videoUrl,
-      });
+      const taskId: string = result.taskId;
+      handleUpdate({ videoStatus: "generating", videoTaskId: taskId });
+
+      // Poll every 5s until done
+      const poll = async () => {
+        try {
+          const statusRes = await fetch(
+            `/api/generate/shot-video/status?taskId=${taskId}&shotId=${localShot.id}`
+          );
+          const statusData = await statusRes.json();
+
+          if (statusData.status === "completed" && statusData.videoUrl) {
+            handleUpdate({ videoStatus: "completed", videoUrl: statusData.videoUrl, videoTaskId: taskId });
+            return;
+          }
+          if (statusData.status === "failed") {
+            handleUpdate({ videoStatus: "failed" });
+            alert(`视频生成失败: ${statusData.errorMessage || "未知错误"}`);
+            return;
+          }
+          setTimeout(poll, 5000);
+        } catch {
+          setTimeout(poll, 8000);
+        }
+      };
+      setTimeout(poll, 5000);
     } catch (error) {
-      console.error("Error generating video:", error);
+      console.error("Error creating video task:", error);
       handleUpdate({ videoStatus: "failed" });
-      alert("视频生成失败，请重试");
+      alert(`视频生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
     }
   };
 

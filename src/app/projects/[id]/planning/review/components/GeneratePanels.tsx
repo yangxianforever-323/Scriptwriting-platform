@@ -937,7 +937,14 @@ export function LocationGeneratePanel({
                 {/* Thumbnail Upload */}
                 <div className="flex justify-center">
                   <div className="w-32 h-24 rounded-lg border-2 border-dashed border-zinc-600 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-colors bg-zinc-800 relative group overflow-hidden">
-                    {referenceImages.length > 0 ? (
+                    {location.thumbnailUrl ? (
+                      <>
+                        <img src={location.thumbnailUrl} alt={location.name} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-xs text-white">更换</span>
+                        </div>
+                      </>
+                    ) : referenceImages.length > 0 ? (
                       <>
                         <img src={referenceImages[0].url} alt={location.name} className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

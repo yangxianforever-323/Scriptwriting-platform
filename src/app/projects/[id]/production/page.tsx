@@ -359,22 +359,53 @@ async function processTask(
 
     const result = await response.json();
 
-    if (response.ok) {
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === task.id
-            ? {
-                ...t,
-                status: "completed" as const,
-                resultUrl: result.imageUrl || result.videoUrl,
-              }
-            : t
-        )
-      );
-      onRefresh();
-    } else {
+    if (!response.ok) {
       throw new Error(result.error || "生成失败");
     }
+
+    // Video tasks are async — poll for completion
+    if (task.type === "video" && result.taskId) {
+      const taskId: string = result.taskId;
+      const poll = async (): Promise<void> => {
+        const statusRes = await fetch(
+          `/api/generate/shot-video/status?taskId=${taskId}&shotId=${task.shotId}`
+        );
+        const statusData = await statusRes.json();
+        if (statusData.status === "completed" && statusData.videoUrl) {
+          setQueue((prev) =>
+            prev.map((t) =>
+              t.id === task.id
+                ? { ...t, status: "completed" as const, resultUrl: statusData.videoUrl }
+                : t
+            )
+          );
+          onRefresh();
+          return;
+        }
+        if (statusData.status === "failed") {
+          throw new Error(statusData.errorMessage || "视频生成失败");
+        }
+        // Still running — poll again after 5s
+        await new Promise((r) => setTimeout(r, 5000));
+        return poll();
+      };
+      await poll();
+      return;
+    }
+
+    // Image tasks complete synchronously
+    setQueue((prev) =>
+      prev.map((t) =>
+        t.id === task.id
+          ? {
+              ...t,
+              status: "completed" as const,
+              resultUrl: result.imageUrl || result.videoUrl,
+            }
+          : t
+      )
+    );
+    onRefresh();
   } catch (error) {
     console.error(`Task ${task.id} failed:`, error);
     setQueue((prev) =>
