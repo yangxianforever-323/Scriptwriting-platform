@@ -1272,6 +1272,12 @@ export function LocationGeneratePanel({
                         ? `${basePrompt}，extend this scene into a seamless 360 degree panoramic view, equirectangular projection, maintain consistent style and lighting, expand the environment in all directions, continuous wrap-around view, no visible seams, HDR lighting, spherical panorama`
                         : `${basePrompt}，360 degree panoramic view, equirectangular projection, seamless spherical panorama, immersive environment, continuous wrap-around view, high dynamic range, HDR lighting`;
                       
+                      console.log("Panorama generation request:", {
+                        prompt: panoramaPrompt.substring(0, 100) + "...",
+                        referenceImagesCount: refUrls.length,
+                        aspectRatio: "2:1",
+                      });
+                      
                       const response = await fetch("/api/ai/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -1286,19 +1292,25 @@ export function LocationGeneratePanel({
                         }),
                       });
                       const result = await response.json();
+                      console.log("Panorama generation response:", result);
+                      
                       if (!response.ok) throw new Error(result.error || "全景图生成失败");
+                      
                       let images: string[] = [];
                       if (result.images && Array.isArray(result.images)) {
                         images = result.images.map((img: any) => img.url || img);
                       } else if (result.url) {
                         images = [result.url];
                       }
+                      
+                      console.log("Extracted images:", images);
+                      
                       if (images.length > 0) {
                         setGeneratedImages(images);
                         // 标记为全景图类型
                         alert(`360度全景图生成成功！${sourceImage ? '\n\n已基于当前视角图片进行扩展生成。' : ''}\n\n提示：\n1. 右键点击图片可保存\n2. 可在VR/3D软件中使用等距圆柱投影格式\n3. 建议使用专业软件转换为HDR格式`);
                       } else {
-                        throw new Error("未返回有效图片");
+                        throw new Error(`未返回有效图片。API响应: ${JSON.stringify(result)}`);
                       }
                     } catch (error) {
                       console.error("Panorama generation error:", error);
@@ -1508,6 +1520,13 @@ export function LocationGeneratePanel({
                         menu.style.left = `${e.clientX}px`;
                         menu.style.top = `${e.clientY}px`;
                         
+                        // 安全移除菜单的辅助函数
+                        const safeRemoveMenu = () => {
+                          if (document.body.contains(menu)) {
+                            document.body.removeChild(menu);
+                          }
+                        };
+                        
                         // 保存图片选项
                         const saveItem = document.createElement('button');
                         saveItem.className = 'w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors flex items-center gap-2';
@@ -1519,7 +1538,7 @@ export function LocationGeneratePanel({
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
-                          document.body.removeChild(menu);
+                          safeRemoveMenu();
                         };
                         
                         // 复制图片地址选项
@@ -1528,7 +1547,7 @@ export function LocationGeneratePanel({
                         copyItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>复制图片地址`;
                         copyItem.onclick = () => {
                           navigator.clipboard.writeText(img);
-                          document.body.removeChild(menu);
+                          safeRemoveMenu();
                         };
                         
                         // 在新标签页打开
@@ -1537,7 +1556,7 @@ export function LocationGeneratePanel({
                         openItem.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>在新标签页打开`;
                         openItem.onclick = () => {
                           window.open(img, '_blank');
-                          document.body.removeChild(menu);
+                          safeRemoveMenu();
                         };
                         
                         menu.appendChild(saveItem);
