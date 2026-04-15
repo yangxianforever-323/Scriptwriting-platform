@@ -1334,10 +1334,14 @@ export function LocationGeneratePanel({
                       const basePrompt = locationPrompt.trim() ||
                         `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}`;
                       
-                      // 如果有参考图，使用扩展提示词；否则使用标准提示词
+                      // 构建强一致性的全景图提示词
+                      const consistencyInstructions = sourceImage
+                        ? `CRITICAL: Use the provided reference image as the EXACT style guide. Maintain IDENTICAL: color palette, lighting conditions, texture quality, architectural style, material properties, and atmospheric mood. The 360 panorama must look like a seamless extension of the reference scene.`
+                        : '';
+                      
                       const panoramaPrompt = sourceImage 
-                        ? `${basePrompt}，extend this scene into a seamless 360 degree panoramic view, equirectangular projection, maintain consistent style and lighting, expand the environment in all directions, continuous wrap-around view, no visible seams, HDR lighting, spherical panorama`
-                        : `${basePrompt}，360 degree panoramic view, equirectangular projection, seamless spherical panorama, immersive environment, continuous wrap-around view, high dynamic range, HDR lighting`;
+                        ? `${basePrompt}。${consistencyInstructions} Create a seamless 360-degree equirectangular panorama that extends this exact environment. Maintain perfect visual consistency: same lighting direction and intensity, identical color grading, matching architectural details, consistent textures and materials, seamless wrap-around with no visible edges. High quality spherical panorama, HDR lighting, professional environment design.`
+                        : `${basePrompt}。Create a seamless 360-degree equirectangular panorama. Maintain consistent style, lighting, and atmosphere throughout the entire spherical view. High quality environment design, HDR lighting, professional scenic panorama.`;
                       
                       console.log("Panorama generation request:", {
                         prompt: panoramaPrompt,
