@@ -58,7 +58,7 @@ export function CharacterGeneratePanel({
   const [selectedImageType, setSelectedImageType] = useState("combo");
   const [aspectRatio, setAspectRatio] = useState("3:4");
   const [resolution, setResolution] = useState("1024x1536");
-  const [quantity, setQuantity] = useState(4);
+  const [quantity, setQuantity] = useState(1);
   const [stylePreset, setStylePreset] = useState("");
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [confirmedImage, setConfirmedImage] = useState<string | null>(null);
@@ -70,22 +70,25 @@ export function CharacterGeneratePanel({
   const resizeStartY = useRef(0);
   const resizeStartH = useRef(0);
 
-  // Upload reference image handler
-  const handleUploadReference = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload reference image handler - uploads to server for persistence
+  const handleUploadReference = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
-      if (!file.type.startsWith("image/")) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        if (result) {
-          setReferenceImages((prev) => [...prev, result]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+        if (!res.ok) throw new Error("上传失败");
+        const { url } = await res.json();
+        setReferenceImages((prev) => [...prev, url]);
+      } catch (err) {
+        console.error("Reference image upload error:", err);
+        alert("参考图上传失败，请重试");
+      }
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -105,8 +108,8 @@ export function CharacterGeneratePanel({
     document.body.removeChild(link);
   };
 
-  // Edit tab upload handler - directly set as character thumbnail
-  const handleEditTabUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Edit tab upload handler - uploads to server then sets as character thumbnail
+  const handleEditTabUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -116,16 +119,17 @@ export function CharacterGeneratePanel({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        // Directly update character thumbnail
-        onUpdate({ thumbnailUrl: result });
-        alert("图片上传成功！");
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      onUpdate({ thumbnailUrl: url });
+    } catch (err) {
+      console.error("Edit tab upload error:", err);
+      alert("图片上传失败，请重试");
+    }
     if (editFileInputRef.current) editFileInputRef.current.value = "";
   };
 
@@ -426,7 +430,7 @@ export function CharacterGeneratePanel({
                       "电影质感": "cinematic", "插画风": "cartoon", "3D渲染": "realistic"
                     };
                     const styleValue = stylePreset ? styleMap[stylePreset] || stylePreset : "realistic";
-                    const resolutionMap = {
+                    const resolutionMap: Record<string, string> = {
                       "512x768": "1K",
                       "1024x1536": "2K",
                       "2048x3072": "4K",
@@ -538,7 +542,14 @@ export function CharacterGeneratePanel({
           {/* Bottom Actions */}
           <div className="p-4 border-t border-zinc-700 space-y-2">
             <button
-              onClick={onClose}
+              onClick={() => {
+                // 保存已确认或生成的图片
+                const img = confirmedImage || generatedImages[0] || character.thumbnailUrl;
+                if (img) {
+                  onUpdate({ thumbnailUrl: img });
+                }
+                onClose();
+              }}
               className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
               完成编辑
@@ -623,7 +634,13 @@ export function CharacterGeneratePanel({
                   />
                 )}
                 <div className="absolute bottom-4 right-4 flex gap-2">
-                  <button className="px-3 py-1.5 text-xs bg-black/60 backdrop-blur text-white rounded hover:bg-black/80 transition-colors flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const img = confirmedImage || generatedImages[0] || character.thumbnailUrl;
+                      if (img) window.open(img, "_blank");
+                    }}
+                    className="px-3 py-1.5 text-xs bg-black/60 backdrop-blur text-white rounded hover:bg-black/80 transition-colors flex items-center gap-1"
+                  >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
                     全屏预览
                   </button>
@@ -721,21 +738,37 @@ export function CharacterGeneratePanel({
           {/* Bottom Toolbar */}
           <div className="p-4 border-t border-zinc-800 flex items-center justify-between">
             <div className="flex gap-2">
-              <button className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded hover:bg-red-900/30 transition-colors flex items-center gap-1">
+              <button
+                onClick={() => { setConfirmedImage(null); setGeneratedImages([]); }}
+                className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded hover:bg-red-900/30 transition-colors flex items-center gap-1"
+              >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 删除重做
               </button>
             </div>
             <div className="flex gap-2">
-              <button className="px-3 py-1.5 text-xs bg-zinc-800 text-zinc-300 rounded hover:bg-zinc-700 transition-colors flex items-center gap-1">
+              <button
+                onClick={() => { setActiveTab("generate"); setConfirmedImage(null); setGeneratedImages([]); }}
+                className="px-3 py-1.5 text-xs bg-zinc-800 text-zinc-300 rounded hover:bg-zinc-700 transition-colors flex items-center gap-1"
+              >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 014.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 重新构图
               </button>
-              <button className="px-3 py-1.5 text-xs bg-zinc-800 text-zinc-300 rounded hover:bg-zinc-700 transition-colors flex items-center gap-1">
+              <button
+                onClick={() => setActiveTab("generate")}
+                className="px-3 py-1.5 text-xs bg-zinc-800 text-zinc-300 rounded hover:bg-zinc-700 transition-colors flex items-center gap-1"
+              >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
                 风格化
               </button>
-              <button className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const img = confirmedImage || generatedImages[0];
+                  if (img) { onUpdate({ thumbnailUrl: img }); onClose(); }
+                  else alert("请先选择或生成图片");
+                }}
+                className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
+              >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 确认使用
               </button>
@@ -794,24 +827,34 @@ export function LocationGeneratePanel({
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [confirmedImage, setConfirmedImage] = useState<string | null>(null);
+  const [locationPrompt, setLocationPrompt] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+        if (!res.ok) throw new Error("上传失败");
+        const { url } = await res.json();
         const newImg: ReferenceImage = {
           id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          url: ev.target?.result as string,
+          url,
           tags: [],
         };
         setReferenceImages(prev => [...prev, newImg]);
-      };
-      reader.readAsDataURL(file);
-    });
+      } catch (err) {
+        console.error("Reference upload error:", err);
+        alert("参考图上传失败，请重试");
+      }
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -830,8 +873,8 @@ export function LocationGeneratePanel({
 
   const activeImage = referenceImages.find(img => img.id === activeImageId);
 
-  // Edit tab upload handler - add to referenceImages
-  const handleEditTabUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Edit tab upload handler - upload to server then save as thumbnailUrl
+  const handleEditTabUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -841,21 +884,17 @@ export function LocationGeneratePanel({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        // Add to referenceImages
-        const newImg: ReferenceImage = {
-          id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          url: result,
-          tags: [],
-        };
-        setReferenceImages(prev => [...prev, newImg]);
-        alert("图片上传成功！");
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      onUpdate({ thumbnailUrl: url });
+    } catch (err) {
+      console.error("Edit tab upload error:", err);
+      alert("图片上传失败，请重试");
+    }
     if (editFileInputRef.current) editFileInputRef.current.value = "";
   };
 
@@ -1062,16 +1101,54 @@ export function LocationGeneratePanel({
             {/* Generate Button - Only in generate tab */}
             {activeTab === "generate" && (
               <button
-                onClick={() => {
-                  // TODO: Implement location image generation
-                  alert("场景图片生成功能开发中...");
+                onClick={async () => {
+                  setGenerating(true);
+                  setGeneratedImages([]);
+                  setConfirmedImage(null);
+                  try {
+                    const angleLabel = ANGLE_LABELS[selectedAngle] || "广角全景";
+                    const prompt = locationPrompt.trim() ||
+                      `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}，${angleLabel}`;
+                    const refUrls = referenceImages.map(img => img.url);
+                    const response = await fetch("/api/ai/generate-image", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        prompt,
+                        style: "realistic",
+                        type: "location",
+                        aspectRatio: "16:9",
+                        resolution: "2K",
+                        count: 2,
+                        referenceImages: refUrls,
+                      }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || "图片生成失败");
+                    let images: string[] = [];
+                    if (result.images && Array.isArray(result.images)) {
+                      images = result.images.map((img: any) => img.url || img);
+                    } else if (result.url) {
+                      images = [result.url];
+                    }
+                    if (images.length > 0) {
+                      setGeneratedImages(images);
+                    } else {
+                      throw new Error("未返回有效图片");
+                    }
+                  } catch (error) {
+                    console.error("Location image generation error:", error);
+                    alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
+                  } finally {
+                    setGenerating(false);
+                  }
                 }}
                 disabled={generating}
                 className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
               >
                 {generating ? (
                   <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <Spinner size="sm" />
                     正在生成中...
                   </>
                 ) : (
@@ -1102,7 +1179,19 @@ export function LocationGeneratePanel({
           </div>
 
           <div className="p-4 border-t border-zinc-700">
-            <button onClick={onClose} className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium rounded-lg transition-colors">完成编辑</button>
+            <button
+              onClick={() => {
+                // 保存已确认或生成的图片
+                const img = confirmedImage || generatedImages[0] || location.thumbnailUrl;
+                if (img) {
+                  onUpdate({ thumbnailUrl: img });
+                }
+                onClose();
+              }}
+              className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              完成编辑
+            </button>
           </div>
         </div>
 
@@ -1191,7 +1280,7 @@ export function LocationGeneratePanel({
               </div>
             </div>
 
-            {/* Generated Preview Placeholder */}
+            {/* Generated Results */}
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium text-white">生成结果</span>
@@ -1200,15 +1289,39 @@ export function LocationGeneratePanel({
                     <Spinner size="xs" /> 正在生成...
                   </span>
                 )}
+                {generatedImages.length > 0 && !generating && (
+                  <span className="text-[10px] text-zinc-500">点击图片选择</span>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {[1, 2].map(i => (
-                  <div key={i} className="aspect-video rounded-lg border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center bg-zinc-900/30">
-                    <svg className="w-8 h-8 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    <span className="text-[10px] text-zinc-600 mt-1">{ANGLE_LABELS[selectedAngle]} #{i}</span>
-                  </div>
-                ))}
-              </div>
+              {generatedImages.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {generatedImages.map((img, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => setConfirmedImage(img)}
+                      className={`aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group ${
+                        confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
+                      }`}
+                    >
+                      <img src={img} alt={`生成${idx + 1}`} className="w-full h-full object-cover" />
+                      {confirmedImage === img && (
+                        <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                          <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {[1, 2].map(i => (
+                    <div key={i} className="aspect-video rounded-lg border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center bg-zinc-900/30">
+                      <svg className="w-8 h-8 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      <span className="text-[10px] text-zinc-600 mt-1">{ANGLE_LABELS[selectedAngle]} #{i}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1218,22 +1331,30 @@ export function LocationGeneratePanel({
               <span className="text-xs text-zinc-500">
                 参考图: {referenceImages.length}张
                 {activeImage && <> · 已选: {activeImage.tags.length}个标签</>}
+                {confirmedImage && <span className="text-green-400"> · 已选图片</span>}
               </span>
             </div>
             <div className="flex gap-2">
+              {confirmedImage && (
+                <button
+                  onClick={() => { setConfirmedImage(null); setGeneratedImages([]); }}
+                  className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded-lg hover:bg-red-900/30 flex items-center gap-1"
+                >
+                  重新生成
+                </button>
+              )}
               <button
                 onClick={() => {
-                  setGenerating(true);
-                  setTimeout(() => setGenerating(false), 2500);
+                  const img = confirmedImage || generatedImages[0];
+                  if (!img) { alert("请先生成并选择图片"); return; }
+                  onUpdate({ thumbnailUrl: img });
+                  onClose();
                 }}
                 disabled={generating}
-                className="px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-800 disabled:opacity-70 flex items-center gap-1.5"
+                className="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 flex items-center gap-1.5"
               >
-                {generating ? (
-                  <><Spinner size="sm" /> 生成中...</>
-                ) : (
-                  <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> 确认使用</>
-                )}
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                确认使用
               </button>
             </div>
           </div>
@@ -1323,6 +1444,64 @@ export function SceneGeneratePanel({
   const [newPropType, setNewPropType] = useState<PropItem["type"]>("item");
   const [newPropDesc, setNewPropDesc] = useState("");
   const [newPropHolder, setNewPropHolder] = useState("");
+  const [sceneGenerating, setSceneGenerating] = useState(false);
+  const sceneUploadRef = useRef<HTMLInputElement>(null);
+
+  const handleSceneUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      onUpdate({ thumbnailUrl: url });
+    } catch (err) {
+      console.error("Scene upload error:", err);
+      alert("图片上传失败，请重试");
+    }
+    if (sceneUploadRef.current) sceneUploadRef.current.value = "";
+  };
+
+  const handleGenerateSceneImage = async () => {
+    setSceneGenerating(true);
+    try {
+      const prompt = [
+        scene.title,
+        scene.description?.substring(0, 100),
+        scene.location,
+        scene.timeOfDay,
+        scene.atmosphereRef?.substring(0, 80),
+        scene.visualEffect?.style,
+        scene.visualEffect?.colorTone,
+        scene.visualEffect?.lighting,
+      ].filter(Boolean).join("，");
+
+      const response = await fetch("/api/ai/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          style: scene.visualEffect?.style ? "cinematic" : "realistic",
+          type: "scene",
+          aspectRatio: "16:9",
+          resolution: "2K",
+          count: 1,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "图片生成失败");
+      const img = result.images?.[0]?.url || result.images?.[0] || result.url;
+      if (img) onUpdate({ thumbnailUrl: img });
+      else throw new Error("未返回有效图片");
+    } catch (error) {
+      console.error("Scene image generation error:", error);
+      alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setSceneGenerating(false);
+    }
+  };
 
   const addProp = () => {
     if (!newPropName.trim()) return;
@@ -1778,16 +1957,28 @@ export function SceneGeneratePanel({
           {/* Bottom Actions */}
           <div className="p-4 border-t border-zinc-700 space-y-2">
             <div className="flex gap-2">
-              <button className="flex-1 px-3 py-2 text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded-lg hover:bg-blue-600/30 transition-colors flex items-center justify-center gap-1.5">
+              <button
+                onClick={() => sceneUploadRef.current?.click()}
+                className="flex-1 px-3 py-2 text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded-lg hover:bg-blue-600/30 transition-colors flex items-center justify-center gap-1.5"
+              >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 上传参考图
               </button>
+              <input ref={sceneUploadRef} type="file" accept="image/*" onChange={handleSceneUpload} className="hidden" />
               <button className="flex-1 px-3 py-2 text-xs bg-zinc-700 text-zinc-300 rounded-lg hover:bg-zinc-600 opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                 素材库
               </button>
             </div>
-            <button onClick={onClose} className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium rounded-lg transition-colors">完成编辑</button>
+            <button
+              onClick={() => {
+                // 分幕编辑面板的图片已经通过 onUpdate 实时保存，这里只需关闭
+                onClose();
+              }}
+              className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              完成编辑
+            </button>
           </div>
         </div>
 
@@ -1802,9 +1993,12 @@ export function SceneGeneratePanel({
               </div>
             </div>
             <div className="flex gap-2">
-              <button className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                生成场景图
+              <button
+                onClick={handleGenerateSceneImage}
+                disabled={sceneGenerating}
+                className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-800 disabled:opacity-70 flex items-center gap-1"
+              >
+                {sceneGenerating ? <><Spinner size="sm" /> 生成中...</> : <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> 生成场景图</>}
               </button>
             </div>
           </div>
@@ -1939,8 +2133,27 @@ export function SceneGeneratePanel({
               <span>道具：{scene.props?.length || 0}件</span>
             </div>
             <div className="flex gap-2">
-              <button className="px-3 py-1.5 text-xs bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700">AI优化</button>
-              <button className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700">确认使用</button>
+              <button
+                onClick={async () => {
+                  if (!scene.description && !scene.atmosphereRef) { alert("请先填写场景描述或氛围"); return; }
+                  try {
+                    const res = await fetch("/api/ai/optimize-text", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ text: scene.description || scene.atmosphereRef, type: "scene" }),
+                    });
+                    if (res.ok) {
+                      const { result } = await res.json();
+                      if (result) onUpdate({ description: result });
+                    }
+                  } catch { /* ignore */ }
+                }}
+                className="px-3 py-1.5 text-xs bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700"
+              >AI优化</button>
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >确认使用</button>
             </div>
           </div>
         </div>

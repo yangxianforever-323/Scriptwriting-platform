@@ -107,11 +107,7 @@ function ThumbnailPlaceholder({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && onUpload) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onUpload(file);
-      };
-      reader.readAsDataURL(file);
+      onUpload(file);
     }
   };
 
@@ -357,31 +353,40 @@ export default function ReviewAnalysisPage() {
     }
   };
 
-  const handleCharacterImageUpload = (idx: number, file: File | null) => {
-    if (!file) {
-      updateCharacter(idx, { thumbnailUrl: undefined });
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    updateCharacter(idx, { thumbnailUrl: url });
+  const handleCharacterImageUpload = async (idx: number, file: File | null) => {
+    if (!file) { updateCharacter(idx, { thumbnailUrl: undefined }); return; }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      updateCharacter(idx, { thumbnailUrl: url });
+    } catch { alert("图片上传失败，请重试"); }
   };
 
-  const handleLocationImageUpload = (idx: number, file: File | null) => {
-    if (!file) {
-      updateLocation(idx, { thumbnailUrl: undefined });
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    updateLocation(idx, { thumbnailUrl: url });
+  const handleLocationImageUpload = async (idx: number, file: File | null) => {
+    if (!file) { updateLocation(idx, { thumbnailUrl: undefined }); return; }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      updateLocation(idx, { thumbnailUrl: url });
+    } catch { alert("图片上传失败，请重试"); }
   };
 
-  const handleSceneImageUpload = (actIdx: number, sceneIdx: number, file: File | null) => {
-    if (!file) {
-      updateScene(actIdx, sceneIdx, { thumbnailUrl: undefined });
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    updateScene(actIdx, sceneIdx, { thumbnailUrl: url });
+  const handleSceneImageUpload = async (actIdx: number, sceneIdx: number, file: File | null) => {
+    if (!file) { updateScene(actIdx, sceneIdx, { thumbnailUrl: undefined }); return; }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      updateScene(actIdx, sceneIdx, { thumbnailUrl: url });
+    } catch { alert("图片上传失败，请重试"); }
   };
 
   const updateCharacter = (index: number, updates: Partial<AnalysisCharacter>) => {

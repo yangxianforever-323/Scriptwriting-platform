@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"SceneGeneratePanel\\\\|export function Scene\" /d/Trae_project/Scriptwriting/src/app/projects/[id]/planning/review/components/GeneratePanels.tsx)",
+      "Bash(awk 'NR>=738 && NR<=741' /d/Trae_project/Scriptwriting/src/app/projects/[id]/planning/review/components/GeneratePanels.tsx)"
+    ]
+  }
+}

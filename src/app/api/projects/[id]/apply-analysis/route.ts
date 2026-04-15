@@ -21,12 +21,14 @@ interface AnalysisCharacter {
   appearance: string;
   personality?: string;
   background?: string;
+  thumbnailUrl?: string;
 }
 
 interface AnalysisLocation {
   name: string;
   description: string;
   atmosphere?: string;
+  thumbnailUrl?: string;
 }
 
 interface AnalysisScene {
@@ -34,9 +36,13 @@ interface AnalysisScene {
   description: string;
   location: string;
   characters: string[];
-  props?: string[];
+  props?: string[] | { name: string; type: string; description: string; holder?: string }[];
   timeOfDay?: string;
   mood?: string;
+  thumbnailUrl?: string;
+  visualEffect?: { style?: string; colorTone?: string; lighting?: string; cameraAngle?: string };
+  atmosphereRef?: string;
+  notes?: string;
 }
 
 interface AnalysisAct {
@@ -94,6 +100,7 @@ export async function POST(
         personality: char.personality || "",
         background: char.background || "",
         role: mapCharacterRole(char.role),
+        ...(char.thumbnailUrl ? { referenceImages: [char.thumbnailUrl] } : {}),
       });
       createdCharacters.push({ id: newChar.id, name: newChar.name });
     }
@@ -103,6 +110,7 @@ export async function POST(
         name: loc.name,
         description: loc.description,
         atmosphere: loc.atmosphere || "",
+        ...(loc.thumbnailUrl ? { referenceImages: [loc.thumbnailUrl] } : {}),
       });
       createdLocations.push({ id: newLoc.id, name: newLoc.name });
     }
@@ -134,8 +142,11 @@ export async function POST(
           .filter((c) => sceneData.characters?.includes(c.name))
           .map((c) => c.id);
 
+        const scenePropNames = (sceneData.props || []).map((p) =>
+          typeof p === "string" ? p : p.name
+        );
         const propIds = createdProps
-          .filter((p) => sceneData.props?.includes(p.name))
+          .filter((p) => scenePropNames.includes(p.name))
           .map((p) => p.id);
 
         storySceneStore.create(newAct.id, {
@@ -145,7 +156,9 @@ export async function POST(
           characterIds: characterIds,
           propIds: propIds,
           timeOfDay: sceneData.timeOfDay || "",
-          mood: sceneData.mood || "",
+          mood: sceneData.mood || sceneData.atmosphereRef || "",
+          notes: sceneData.notes || "",
+          ...(sceneData.thumbnailUrl ? { thumbnailUrl: sceneData.thumbnailUrl } : {}),
         });
       }
     }

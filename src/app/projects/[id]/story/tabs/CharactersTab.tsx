@@ -32,6 +32,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
     background: "",
     motivation: "",
     arc: "",
+    referenceImages: [],
   });
 
   const loadCharacters = async () => {
@@ -40,10 +41,6 @@ export function CharactersTab({ story }: CharactersTabProps) {
       if (!res.ok) return;
       const chars: Character[] = await res.json();
       setCharacters(chars);
-      if (!selectedCharacter && chars.length > 0) {
-        setSelectedCharacter(chars[0]);
-        setFormData(chars[0]);
-      }
     } catch (e) {
       console.error("Failed to load characters", e);
     }
@@ -66,6 +63,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
         if (res.ok) {
           const updated: Character = await res.json();
           setSelectedCharacter(updated);
+          setFormData(updated);
         }
       } else {
         const res = await fetch(`/api/projects/${story.projectId}/characters`, {
@@ -76,6 +74,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
         if (res.ok) {
           const newChar: Character = await res.json();
           setSelectedCharacter(newChar);
+          setFormData(newChar);
         }
       }
       await loadCharacters();
@@ -86,31 +85,71 @@ export function CharactersTab({ story }: CharactersTabProps) {
     }
   };
 
+  /** Apply a generated/uploaded image to the character's referenceImages */
+  const handleApplyImage = async (url: string) => {
+    const currentImages = formData.referenceImages || [];
+    if (currentImages.includes(url)) return; // already added
+
+    const updated = { ...formData, referenceImages: [...currentImages, url] };
+    setFormData(updated);
+
+    // Persist immediately if editing an existing character
+    if (selectedCharacter) {
+      try {
+        const res = await fetch(`/api/projects/${story.projectId}/characters/${selectedCharacter.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ referenceImages: updated.referenceImages }),
+        });
+        if (res.ok) {
+          const saved: Character = await res.json();
+          setSelectedCharacter(saved);
+          setFormData(saved);
+          await loadCharacters();
+        }
+      } catch (e) {
+        console.error("Failed to save image", e);
+      }
+    }
+  };
+
+  /** Remove an image from referenceImages */
+  const handleRemoveImage = async (url: string) => {
+    const newImages = (formData.referenceImages || []).filter((u) => u !== url);
+    setFormData({ ...formData, referenceImages: newImages });
+
+    if (selectedCharacter) {
+      try {
+        const res = await fetch(`/api/projects/${story.projectId}/characters/${selectedCharacter.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ referenceImages: newImages }),
+        });
+        if (res.ok) {
+          const saved: Character = await res.json();
+          setSelectedCharacter(saved);
+          setFormData(saved);
+          await loadCharacters();
+        }
+      } catch (e) {
+        console.error("Failed to remove image", e);
+      }
+    }
+  };
+
   const handleEdit = (character: Character) => {
     setSelectedCharacter(character);
-    setFormData(character);
+    setFormData({ ...character, referenceImages: character.referenceImages || [] });
     setDialogTab("edit");
   };
 
   const handleDelete = async (characterId: string) => {
     if (!confirm("确定要删除这个角色吗？")) return;
     try {
-      await fetch(`/api/projects/${story.projectId}/characters/${characterId}`, {
-        method: "DELETE",
-      });
+      await fetch(`/api/projects/${story.projectId}/characters/${characterId}`, { method: "DELETE" });
       if (selectedCharacter?.id === characterId) {
         setSelectedCharacter(null);
-        setFormData({
-          name: "",
-          role: "supporting",
-          age: "",
-          gender: "",
-          appearance: "",
-          personality: "",
-          background: "",
-          motivation: "",
-          arc: "",
-        });
+        setFormData({ name: "", role: "supporting", age: "", gender: "", appearance: "", personality: "", background: "", motivation: "", arc: "", referenceImages: [] });
       }
       await loadCharacters();
     } catch (e) {
@@ -119,17 +158,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
   };
 
   const handleAdd = () => {
-    setFormData({
-      name: "",
-      role: "supporting",
-      age: "",
-      gender: "",
-      appearance: "",
-      personality: "",
-      background: "",
-      motivation: "",
-      arc: "",
-    });
+    setFormData({ name: "", role: "supporting", age: "", gender: "", appearance: "", personality: "", background: "", motivation: "", arc: "", referenceImages: [] });
     setSelectedCharacter(null);
     setDialogTab("edit");
   };
@@ -182,8 +211,15 @@ export function CharactersTab({ story }: CharactersTabProps) {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center text-sm font-medium text-zinc-600 dark:text-zinc-300">
-                        {character.name?.charAt(0) || "?"}
+                      {/* Avatar: show first reference image if available */}
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-100 dark:bg-zinc-700 flex-shrink-0">
+                        {character.referenceImages?.[0] ? (
+                          <img src={character.referenceImages[0]} alt={character.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-sm font-medium text-zinc-600 dark:text-zinc-300">
+                            {character.name?.charAt(0) || "?"}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <h3 className="font-medium text-sm text-zinc-900 dark:text-zinc-100">{character.name}</h3>
@@ -205,6 +241,18 @@ export function CharactersTab({ story }: CharactersTabProps) {
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 pl-10">
                       {character.appearance}
                     </p>
+                  )}
+                  {(character.referenceImages?.length ?? 0) > 0 && (
+                    <div className="flex gap-1 mt-2 pl-10">
+                      {character.referenceImages!.slice(0, 3).map((url, i) => (
+                        <img key={i} src={url} alt="" className="w-8 h-8 rounded object-cover border border-zinc-200 dark:border-zinc-600" />
+                      ))}
+                      {(character.referenceImages?.length ?? 0) > 3 && (
+                        <div className="w-8 h-8 rounded bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center text-xs text-zinc-500">
+                          +{character.referenceImages!.length - 3}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
@@ -246,7 +294,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
                   </button>
                   <button
                     onClick={() => setDialogTab("ai-generate")}
-                    disabled={!formData.name?.trim() || !formData.appearance}
+                    disabled={!formData.name?.trim()}
                     className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       dialogTab === "ai-generate"
                         ? "bg-green-500 text-white shadow-sm"
@@ -261,7 +309,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
-              {dialogTab === "edit" ? (
+              {dialogTab === "edit" && (
                 <div className="space-y-4 max-w-2xl">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -366,6 +414,33 @@ export function CharactersTab({ story }: CharactersTabProps) {
                     />
                   </div>
 
+                  {/* Reference Images Section */}
+                  {(formData.referenceImages?.length ?? 0) > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+                        参考图片（{formData.referenceImages!.length} 张）
+                      </label>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {formData.referenceImages!.map((url, i) => (
+                          <div key={i} className="group relative rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                            <div className="aspect-square bg-zinc-100 dark:bg-zinc-800">
+                              <img src={url} alt={`参考图 ${i + 1}`} className="w-full h-full object-cover" />
+                            </div>
+                            <button
+                              onClick={() => handleRemoveImage(url)}
+                              className="absolute top-1 right-1 p-1 bg-red-500/90 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                              title="删除图片"
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex justify-end pt-4">
                     <Button onClick={handleSave} disabled={!formData.name?.trim() || saving}>
                       {saving ? <Spinner size="sm" /> : null}
@@ -373,7 +448,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
                     </Button>
                   </div>
                 </div>
-              ) : null}
+              )}
 
               {dialogTab === "ai-generate" && (
                 <AIGenerateImage
@@ -383,9 +458,7 @@ export function CharactersTab({ story }: CharactersTabProps) {
                     appearance: formData.appearance,
                     personality: formData.personality,
                   }}
-                  onImageGenerated={(images) => {
-                    console.log("Generated character images:", images);
-                  }}
+                  onApplyImage={handleApplyImage}
                 />
               )}
             </div>

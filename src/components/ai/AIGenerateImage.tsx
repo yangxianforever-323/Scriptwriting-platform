@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 
 interface AIGenerateImageProps {
@@ -18,16 +18,11 @@ interface AIGenerateImageProps {
     mood?: string;
     shotType?: string;
   };
+  /** Called when user confirms applying a generated/uploaded image to the project */
+  onApplyImage?: (url: string) => void;
+  /** Called with all generated image URLs */
   onImageGenerated?: (images: Array<{ url: string; view?: string }>) => void;
 }
-
-const CHARACTER_VIEWS = [
-  { value: "front", label: "全身正面", desc: "完整展示角色外观" },
-  { value: "side", label: "侧像特写", desc: "展示侧面轮廓" },
-  { value: "back", label: "背面视图", desc: "展示背面造型" },
-  { value: "three_quarter", label: "组合图", desc: "四分之三角度" },
-  { value: "close_up", label: "特写三线", desc: "面部表情特写" },
-];
 
 const STYLE_OPTIONS = [
   { value: "realistic", label: "写实风", icon: "📷" },
@@ -44,15 +39,17 @@ const ASPECT_RATIOS = [
   { value: "16:9", label: "16:9", size: "1536x1024" },
 ];
 
-export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImageProps) {
+export function AIGenerateImage({ type, data, onApplyImage, onImageGenerated }: AIGenerateImageProps) {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [selectedViews, setSelectedViews] = useState<string[]>(["front", "side", "back", "three_quarter", "close_up"]);
   const [selectedStyle, setSelectedStyle] = useState("realistic");
-  const [aspectRatio, setAspectRatio] = useState("3:4");
+  const [aspectRatio, setAspectRatio] = useState(type === "character" ? "3:4" : "16:9");
   const [count, setCount] = useState(4);
   const [customPrompt, setCustomPrompt] = useState("");
   const [generatedImages, setGeneratedImages] = useState<Array<{ url: string; view?: string; fileName?: string }>>([]);
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getDefaultPrompt = (): string => {
     switch (type) {
@@ -69,352 +66,312 @@ export function AIGenerateImage({ type, data, onImageGenerated }: AIGenerateImag
     }
   };
 
-  const handleToggleView = (view: string) => {
-    setSelectedViews((prev) =>
-      prev.includes(view) ? prev.filter((v) => v !== view) : [...prev, view]
-    );
-  };
-
   const handleGenerate = async () => {
     setIsGenerating(true);
     setError(null);
-    setGeneratedImages([]);
+    setSelectedUrl(null);
 
     try {
       const prompt = customPrompt.trim() || getDefaultPrompt();
       const selectedSize = ASPECT_RATIOS.find((ar) => ar.value === aspectRatio)?.size || "1024x1024";
 
-      const requestBody: Record<string, unknown> = {
-        type,
-        prompt,
-        style: selectedStyle,
-        size: selectedSize,
-        n: count,
-        ...data,
-      };
-
-      if (type === "character") {
-        requestBody.views = selectedViews;
-        requestBody.name = data.name;
-        requestBody.appearance = data.appearance || data.description;
-        requestBody.personality = data.personality;
-      }
-
-      console.log("Sending image generation request:", requestBody);
-
       const response = await fetch("/api/ai/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          type,
+          prompt,
+          style: selectedStyle,
+          size: selectedSize,
+          n: count,
+          ...data,
+        }),
       });
 
       const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to generate image");
-      }
-
-      console.log("Image generation result:", result);
+      if (!response.ok) throw new Error(result.error || "生成失败");
 
       let images: Array<{ url: string; view?: string; fileName?: string }> = [];
-
-      if (type === "character" && result.images) {
-        images = result.images.map((img: { url: string; view: string }) => ({
+      if (result.images) {
+        images = result.images.map((img: { url: string; view?: string; fileName?: string }) => ({
           url: img.url,
           view: img.view,
           fileName: img.fileName,
         }));
       } else if (result.url) {
         images = [{ url: result.url, fileName: result.fileName }];
-      } else if (result.images) {
-        images = result.images.map((img: { url: string; fileName: string }) => ({
-          url: img.url,
-          fileName: img.fileName,
-        }));
       }
 
       setGeneratedImages(images);
       onImageGenerated?.(images);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      setError(errorMessage);
-      console.error("Image generation error:", err);
+      setError(err instanceof Error ? err.message : "生成失败，请重试");
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: fd });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "上传失败");
+
+      const newImage = { url: result.url };
+      setGeneratedImages((prev) => [newImage, ...prev]);
+      setSelectedUrl(result.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "上传失败");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleApply = () => {
+    if (selectedUrl && onApplyImage) {
+      onApplyImage(selectedUrl);
     }
   };
 
   const handleDownload = (url: string, fileName?: string) => {
     const link = document.createElement("a");
     link.href = url;
-    link.download = fileName || `generated-image-${Date.now()}.png`;
+    link.download = fileName || `image-${Date.now()}.png`;
     link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleExportAll = async () => {
-    for (const img of generatedImages) {
-      handleDownload(img.url, img.fileName);
-    }
-  };
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center gap-2 text-green-500">
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         <span className="font-medium">AI图像生成</span>
-        <span className="text-xs text-zinc-500">基于{type === "character" ? "角色描述" : type === "location" ? "场景设定" : type === "prop" ? "道具细节" : "分镜内容"}生成参考形象</span>
+        <span className="text-xs text-zinc-500">
+          基于{type === "character" ? "角色描述" : type === "location" ? "场景设定" : type === "prop" ? "道具细节" : "分镜内容"}生成参考形象
+        </span>
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {error}
-          </div>
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {error}
         </div>
       )}
 
-      {type === "character" && (
-        <div>
-          <label className="block text-sm font-medium mb-2">生成类型</label>
-          <div className="flex flex-wrap gap-2">
-            {CHARACTER_VIEWS.map((view) => (
-              <button
-                key={view.value}
-                onClick={() => handleToggleView(view.value)}
-                className={`px-3 py-2 rounded-lg border text-sm transition-all ${
-                  selectedViews.includes(view.value)
-                    ? "bg-green-500 text-white border-green-500"
-                    : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 hover:border-green-400"
-                }`}
-              >
-                <div className="font-medium">{view.label}</div>
-                <div className="text-xs opacity-75">{view.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {/* Prompt */}
       <div>
-        <label className="block text-sm font-medium mb-2">
+        <label className="block text-sm font-medium mb-1.5">
           生成提示词
-          <span className="text-zinc-400 font-normal ml-2">
-            ({customPrompt.length || getDefaultPrompt().length} 字符)
+          <span className="text-zinc-400 font-normal ml-2 text-xs">
+            ({(customPrompt || getDefaultPrompt()).length} 字符)
           </span>
         </label>
         <textarea
           value={customPrompt}
           onChange={(e) => setCustomPrompt(e.target.value)}
           placeholder={getDefaultPrompt()}
-          rows={4}
+          rows={3}
           className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm resize-none"
         />
         {!customPrompt && (
-          <p className="mt-1 text-xs text-zinc-400">留空将使用默认提示词</p>
+          <p className="mt-1 text-xs text-zinc-400">留空将自动根据信息生成提示词</p>
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      {/* Options */}
+      <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-sm font-medium mb-2">分辨率</label>
+          <label className="block text-xs font-medium mb-1 text-zinc-600 dark:text-zinc-400">比例</label>
           <select
             value={aspectRatio}
             onChange={(e) => setAspectRatio(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+            className="w-full px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
           >
             {ASPECT_RATIOS.map((ar) => (
-              <option key={ar.value} value={ar.value}>
-                {ar.label} ({ar.size})
-              </option>
+              <option key={ar.value} value={ar.value}>{ar.label}</option>
             ))}
           </select>
         </div>
-
         <div>
-          <label className="block text-sm font-medium mb-2">生成数量</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={1}
-              max={8}
-              value={count}
-              onChange={(e) => setCount(Math.min(8, Math.max(1, parseInt(e.target.value) || 1)))}
-              className="w-20 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800"
-            />
-            <div className="flex gap-1">
-              {[2, 4, 6, 8].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setCount(n)}
-                  className={`w-8 h-8 rounded text-sm ${
-                    count === n
-                      ? "bg-blue-500 text-white"
-                      : "bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+          <label className="block text-xs font-medium mb-1 text-zinc-600 dark:text-zinc-400">数量</label>
+          <div className="flex items-center gap-1">
+            {[2, 4, 6, 8].map((n) => (
+              <button
+                key={n}
+                onClick={() => setCount(n)}
+                className={`flex-1 h-8 rounded text-sm font-medium transition-colors ${
+                  count === n
+                    ? "bg-blue-500 text-white"
+                    : "bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
           </div>
         </div>
-
         <div>
-          <label className="block text-sm font-medium mb-2">风格</label>
+          <label className="block text-xs font-medium mb-1 text-zinc-600 dark:text-zinc-400">风格</label>
           <select
             value={selectedStyle}
             onChange={(e) => setSelectedStyle(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+            className="w-full px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
           >
-            {STYLE_OPTIONS.map((style) => (
-              <option key={style.value} value={style.value}>
-                {style.icon} {style.label}
-              </option>
+            {STYLE_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>{s.icon} {s.label}</option>
             ))}
           </select>
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium mb-2">风格预设</label>
-        <div className="grid grid-cols-3 gap-2">
-          {STYLE_OPTIONS.map((style) => (
-            <button
-              key={style.value}
-              onClick={() => setSelectedStyle(style.value)}
-              className={`px-3 py-2 rounded-lg border text-sm transition-all ${
-                selectedStyle === style.value
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
-                  : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-300"
-              }`}
-            >
-              {style.icon} {style.label}
-            </button>
-          ))}
-        </div>
+      {/* Action buttons */}
+      <div className="flex gap-2">
+        <Button onClick={handleGenerate} disabled={isGenerating} className="flex-1">
+          {isGenerating ? (
+            <>
+              <div className="animate-spin -ml-1 mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+              生成中...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              AI生成图片
+            </>
+          )}
+        </Button>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading} title="上传本地图片">
+          {isUploading ? (
+            <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+          ) : (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          )}
+          <span className="ml-1 text-sm">上传图片</span>
+        </Button>
       </div>
 
-      <Button
-        onClick={handleGenerate}
-        disabled={isGenerating}
-        className="w-full py-3 text-lg"
-      >
-        {isGenerating ? (
-          <>
-            <div className="animate-spin -ml-1 mr-2 h-5 w-5 border-2 border-current border-t-transparent rounded-full"></div>
-            正在生成中...
-          </>
-        ) : (
-          <>
-            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            生成图片
-          </>
-        )}
-      </Button>
-
-      {generatedImages.length > 0 && (
-        <div className="space-y-4">
+      {/* Results */}
+      {generatedImages.length > 0 ? (
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium">
-              生成结果 ({generatedImages.length} 张)
-            </h3>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleExportAll}>
-                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                导出全部图片
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => {
-                setGeneratedImages([]);
-                onImageGenerated?.([]);
-              }}>
-                清除结果
-              </Button>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                生成结果（{generatedImages.length} 张）
+              </h3>
+              {selectedUrl && (
+                <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  已选中
+                </span>
+              )}
             </div>
+            <button
+              onClick={() => { setGeneratedImages([]); setSelectedUrl(null); }}
+              className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+            >
+              清除全部
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <p className="text-xs text-zinc-400">
+            点击图片选择，再点击"应用到项目"即可保存到角色/场景
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {generatedImages.map((img, index) => (
               <div
                 key={index}
-                className="group relative border-2 border-dashed border-zinc-300 dark:border-zinc-600 rounded-lg overflow-hidden hover:border-green-400 transition-colors"
+                onClick={() => setSelectedUrl(img.url === selectedUrl ? null : img.url)}
+                className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all border-2 ${
+                  selectedUrl === img.url
+                    ? "border-green-500 ring-2 ring-green-500/30 shadow-md"
+                    : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-400"
+                }`}
               >
-                <div className="aspect-square bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center p-2">
-                  {img.url.startsWith("/uploads") ? (
-                    <img
-                      src={img.url}
-                      alt={`${type} ${img.view || `image ${index + 1}`}`}
-                      className="w-full h-full object-contain rounded"
-                    />
-                  ) : (
-                    <div className="text-center">
-                      <svg className="w-12 h-12 mx-auto text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <p className="text-xs text-zinc-400 mt-2">图片加载中...</p>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <p className="text-white text-xs font-medium truncate">
-                    {img.view || `图片 ${index + 1}`}
-                  </p>
+                <div className="aspect-square bg-zinc-100 dark:bg-zinc-800">
+                  <img
+                    src={img.url}
+                    alt={`image ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
-                <button
-                  onClick={() => handleDownload(img.url, img.fileName)}
-                  className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white"
-                  title="下载图片"
-                >
-                  <svg className="w-4 h-4 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                </button>
+                {selectedUrl === img.url && (
+                  <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center pointer-events-none">
+                    <div className="bg-green-500 rounded-full p-1.5 shadow">
+                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+
+                <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDownload(img.url, img.fileName); }}
+                    className="p-1 bg-white/90 dark:bg-zinc-800/90 rounded-full shadow-sm hover:bg-white"
+                    title="下载"
+                  >
+                    <svg className="w-3.5 h-3.5 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+                </div>
+
+                {img.view && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5 pointer-events-none">
+                    <p className="text-white text-xs truncate">{img.view}</p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
-          {type !== "character" && generatedImages.length > 0 && (
-            <p className="text-xs text-zinc-500 text-center">
-              组合图视角：{selectedStyle === "realistic" ? "写实" : selectedStyle} · 全身三线图
-              左侧/右侧/背三个角度的全身形象
-            </p>
+          {onApplyImage && (
+            <Button onClick={handleApply} disabled={!selectedUrl} className="w-full">
+              {selectedUrl ? (
+                <>
+                  <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  应用到项目
+                </>
+              ) : (
+                "请先点击选择一张图片"
+              )}
+            </Button>
           )}
         </div>
+      ) : (
+        !isGenerating && (
+          <div className="border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+            <svg className="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-sm text-zinc-400">点击"AI生成图片"或"上传图片"添加参考图</p>
+          </div>
+        )
       )}
-
-      <div className="flex justify-end gap-2 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-        <Button variant="outline" size="sm">
-          <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          刷新构图
-        </Button>
-        <Button variant="outline" size="sm">
-          <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          风格化
-        </Button>
-        <Button size="sm">
-          <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          确认使用
-        </Button>
-      </div>
     </div>
   );
 }
