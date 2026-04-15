@@ -1330,18 +1330,15 @@ export function LocationGeneratePanel({
                         }
                       });
                       
-                      // 构建全景图提示词 - 基于已有图片扩展
+                      // 构建全景图提示词 - 基于Skybox AI最佳实践
                       const basePrompt = locationPrompt.trim() ||
                         `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}`;
                       
-                      // 构建强一致性的全景图提示词
-                      const consistencyInstructions = sourceImage
-                        ? `CRITICAL: Use the provided reference image as the EXACT style guide. Maintain IDENTICAL: color palette, lighting conditions, texture quality, architectural style, material properties, and atmospheric mood. The 360 panorama must look like a seamless extension of the reference scene.`
-                        : '';
-                      
+                      // Skybox AI 风格的360全景提示词结构
+                      // 1. 主场景描述 2. 结构元素 3. 光照效果 4. 额外元素 5. 整体氛围
                       const panoramaPrompt = sourceImage 
-                        ? `${basePrompt}。${consistencyInstructions} Create a seamless 360-degree equirectangular panorama that extends this exact environment. Maintain perfect visual consistency: same lighting direction and intensity, identical color grading, matching architectural details, consistent textures and materials, seamless wrap-around with no visible edges. High quality spherical panorama, HDR lighting, professional environment design.`
-                        : `${basePrompt}。Create a seamless 360-degree equirectangular panorama. Maintain consistent style, lighting, and atmosphere throughout the entire spherical view. High quality environment design, HDR lighting, professional scenic panorama.`;
+                        ? `${basePrompt}。A seamless 360-degree equirectangular panorama environment. EXTEND the scene from the reference image in all directions while maintaining EXACT color palette, lighting direction, material textures, and atmospheric mood. The panorama should show the same location from all angles - front, sides, and back - as one continuous space. Include matching sky/ceiling above and ground/floor below. No visible seams or edges. High detail, consistent style throughout the entire spherical view.`
+                        : `${basePrompt}。A seamless 360-degree equirectangular panorama environment showing all directions - front, sides, and back - as one continuous space. Include sky above and ground below. Consistent lighting, color palette, and style throughout. No visible seams. High quality spherical panorama.`;
                       
                       console.log("Panorama generation request:", {
                         prompt: panoramaPrompt,
