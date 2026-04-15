@@ -71,6 +71,21 @@ export function ImageViewer({ src, alt = "Image", isOpen, onClose }: ImageViewer
     }
   }, []);
 
+  // 处理双击放大/缩小
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setScale(prev => {
+      // 如果当前缩放小于1.5，则放大到2倍，否则重置为1
+      const newScale = prev < 1.5 ? 2 : 1;
+      return newScale;
+    });
+    // 双击时重置位置到中心
+    if (scale < 1.5) {
+      setPosition({ x: 0, y: 0 });
+      positionRef.current = { x: 0, y: 0 };
+    }
+  }, [scale]);
+
   // 处理键盘事件
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -160,7 +175,7 @@ export function ImageViewer({ src, alt = "Image", isOpen, onClose }: ImageViewer
 
       {/* 提示文字 */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 text-zinc-400 text-xs">
-        滚轮缩放 · 中键拖动 · ESC关闭
+        滚轮缩放 · 中键拖动 · 双击放大 · ESC关闭
       </div>
 
       {/* 图片容器 */}
@@ -177,12 +192,13 @@ export function ImageViewer({ src, alt = "Image", isOpen, onClose }: ImageViewer
         <img
           src={src}
           alt={alt}
-          className="max-w-none select-none"
+          className="max-w-none select-none cursor-pointer"
           style={{
             transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
             transition: isDragging ? 'none' : 'transform 0.1s ease-out',
           }}
           draggable={false}
+          onDoubleClick={handleDoubleClick}
         />
       </div>
     </div>
