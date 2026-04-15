@@ -38,6 +38,7 @@ export function validateNovelAnalysis(data: unknown): ValidationResult {
     genre: validateGenre(raw.genre, errors, warnings),
     targetDuration: validateTargetDuration(raw.targetDuration, errors, warnings),
     characters: validateAndCleanCharacters(raw.characters, errors, warnings),
+    relationships: validateAndCleanRelationships(raw.relationships, warnings),
     locations: validateAndCleanLocations(raw.locations, errors, warnings),
     props: validateAndCleanProps(raw.props, errors, warnings),
     acts: validateAndCleanActs(raw.acts, errors, warnings),
@@ -160,7 +161,7 @@ function validateAndCleanCharacters(
       }
       return true;
     })
-    .slice(0, 12)
+    .slice(0, 20) // 放宽上限，允许更多有戏分角色
     .map((item, index) => {
       const char = item as Record<string, unknown>;
       return {
@@ -168,8 +169,37 @@ function validateAndCleanCharacters(
         description: validateAndCleanString(char.description, "", `characters[${index}].description`, [], []),
         role: validateRole(char.role, `characters[${index}].role`, warnings),
         appearance: validateAndCleanString(char.appearance, "", `characters[${index}].appearance`, [], []),
+        // 保留所有详细字段，不再过滤
+        age: char.age ? String(char.age).trim() : undefined,
+        gender: char.gender ? String(char.gender).trim() : undefined,
+        personality: char.personality ? String(char.personality).trim() : undefined,
+        background: char.background ? String(char.background).trim() : undefined,
+        motivation: char.motivation ? String(char.motivation).trim() : undefined,
+        arc: char.arc ? String(char.arc).trim() : undefined,
       };
     });
+}
+
+function validateAndCleanRelationships(
+  value: unknown,
+  warnings: ValidationError[]
+): NovelAnalysisResult["relationships"] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((item) => item && typeof item === "object")
+    .slice(0, 30)
+    .map((item) => {
+      const rel = item as Record<string, unknown>;
+      return {
+        from: String(rel.from || "").trim(),
+        to: String(rel.to || "").trim(),
+        type: String(rel.type || "").trim(),
+        description: String(rel.description || "").trim(),
+        dynamic: rel.dynamic ? String(rel.dynamic).trim() : undefined,
+      };
+    })
+    .filter((rel) => rel.from && rel.to); // 必须有双方角色名
 }
 
 function validateRole(value: unknown, field: string, warnings: ValidationError[]): NovelAnalysisResult["characters"][0]["role"] {
@@ -206,11 +236,23 @@ function validateAndCleanLocations(
       }
       return true;
     })
-    .slice(0, 20)
-    .map((item, index) => ({
-      name: validateAndCleanString((item as any).name, `地点${index + 1}`, `locations[${index}].name`, [], []),
-      description: validateAndCleanString((item as any).description, "", `locations[${index}].description`, [], []),
-    }));
+    .slice(0, 30)
+    .map((item, index) => {
+      const loc = item as Record<string, unknown>;
+      const locType = String(loc.type || "").toLowerCase().trim();
+      const validTypes = ["interior", "exterior", "both"];
+      return {
+        name: validateAndCleanString(loc.name, `地点${index + 1}`, `locations[${index}].name`, [], []),
+        description: validateAndCleanString(loc.description, "", `locations[${index}].description`, [], []),
+        // 保留所有详细字段
+        type: validTypes.includes(locType) ? (locType as "interior" | "exterior" | "both") : undefined,
+        atmosphere: loc.atmosphere ? String(loc.atmosphere).trim() : undefined,
+        keyFeatures: Array.isArray(loc.keyFeatures)
+          ? loc.keyFeatures.map((f) => String(f).trim()).filter(Boolean).slice(0, 5)
+          : undefined,
+        timeContext: loc.timeContext ? String(loc.timeContext).trim() : undefined,
+      };
+    });
 }
 
 function validateAndCleanProps(
@@ -230,7 +272,7 @@ function validateAndCleanProps(
       }
       return true;
     })
-    .slice(0, 20)
+    .slice(0, 30)
     .map((item, index) => {
       const prop = item as Record<string, unknown>;
       const importance = String(prop.importance || "supporting").toLowerCase().trim();
@@ -241,6 +283,10 @@ function validateAndCleanProps(
         importance: validImportances.includes(importance)
           ? (importance as "key" | "supporting" | "background")
           : "supporting",
+        // 保留外观描述（用于AI图片生成）
+        appearance: prop.appearance ? String(prop.appearance).trim() : undefined,
+        holder: prop.holder ? String(prop.holder).trim() : undefined,
+        storyRole: prop.storyRole ? String(prop.storyRole).trim() : undefined,
       };
     });
 }
@@ -290,7 +336,7 @@ function validateAndCleanScenes(
       }
       return true;
     })
-    .slice(0, 30)
+    .slice(0, 50) // 允许更多场景
     .map((item, sceneIndex) => {
       const scene = item as Record<string, unknown>;
       return {
@@ -301,8 +347,21 @@ function validateAndCleanScenes(
           ? scene.characters.map((c) => String(c)).filter(Boolean)
           : [],
         props: Array.isArray(scene.props)
-          ? scene.props.map((p) => String(p)).filter(Boolean)
+          ? scene.props.map((p) => {
+              // 兼容 props 是字符串数组或对象数组
+              if (typeof p === "string") return p;
+              if (p && typeof p === "object" && (p as any).name) return String((p as any).name);
+              return String(p);
+            }).filter(Boolean)
           : [],
+        // 保留所有视觉元数据字段
+        timeOfDay: scene.timeOfDay ? String(scene.timeOfDay).trim() : undefined,
+        weather: scene.weather ? String(scene.weather).trim() : undefined,
+        mood: scene.mood ? String(scene.mood).trim() : undefined,
+        visualStyle: scene.visualStyle ? String(scene.visualStyle).trim() : undefined,
+        cameraNote: scene.cameraNote ? String(scene.cameraNote).trim() : undefined,
+        keyAction: scene.keyAction ? String(scene.keyAction).trim() : undefined,
+        keyDialogue: scene.keyDialogue ? String(scene.keyDialogue).trim() : undefined,
       };
     });
 }
@@ -329,10 +388,24 @@ export function sanitizeNovelContent(content: string): string {
   cleaned = cleaned.replace(/\n{4,}/g, "\n\n\n");
   cleaned = cleaned.trim();
 
-  if (cleaned.length > 50000) {
-    const firstPart = cleaned.substring(0, 25000);
-    const lastPart = cleaned.substring(cleaned.length - 25000);
-    cleaned = `${firstPart}\n\n... (内容过长，已截断) ...\n\n${lastPart}`;
+  // 对超长内容采用三段均匀采样，保证开头、中间、结尾都被覆盖
+  // 避免只取首尾导致中间角色和情节大量丢失
+  if (cleaned.length > 60000) {
+    const totalLen = cleaned.length;
+    const segmentSize = 20000; // 每段约2万字
+
+    const head = cleaned.substring(0, segmentSize);
+    const midStart = Math.floor(totalLen / 2) - Math.floor(segmentSize / 2);
+    const mid = cleaned.substring(midStart, midStart + segmentSize);
+    const tail = cleaned.substring(totalLen - segmentSize);
+
+    cleaned = [
+      head,
+      `\n\n...(已省略部分内容，原文共约${Math.round(totalLen / 500)}页)...\n\n`,
+      mid,
+      `\n\n...(已省略部分内容)...\n\n`,
+      tail,
+    ].join("");
   }
 
   return cleaned;

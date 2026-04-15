@@ -99,7 +99,6 @@ export async function POST(request: Request) {
           resolution,
           referenceImages,
           customStyleSuffix: variation.prompt,
-          model,
         });
 
         console.log(`Image ${index + 1} result:`, result);
@@ -127,8 +126,8 @@ export async function POST(request: Request) {
     // 收集成功生成的图片和错误信息
     const errors: string[] = [];
     for (const result of results) {
-      if (result && 'url' in result) {
-        images.push(result);
+      if (result && 'url' in result && result.url) {
+        images.push({ url: result.url, style: result.style });
       } else if (result && 'error' in result) {
         errors.push(result.error as string);
       }

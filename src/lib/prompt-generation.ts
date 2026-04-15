@@ -88,75 +88,164 @@ export function generateImagePrompt(
   location?: Location | null,
   config: PromptGenerationConfig = {}
 ): string {
-  const parts: string[] = [];
   const language = config.language || "zh";
+  const isEnglish = language === "en";
 
+  // ── 1. Cinematic framing (safety-safe preamble) ────────────────
+  const framingParts: string[] = [];
+
+  // Style preset — establishes artistic context upfront to reduce safety filter risk
   if (config.style) {
     const stylePreset = STYLE_PRESETS.find(s => s.value === config.style);
-    if (stylePreset) {
-      parts.push(stylePreset.prompt);
-    } else {
-      parts.push(config.style);
-    }
+    framingParts.push(stylePreset ? stylePreset.prompt : config.style);
+  } else {
+    framingParts.push("cinematic film still, professional cinematography");
   }
 
+  // Shot type
   if (shot.shotType && SHOT_TYPE_PROMPTS[shot.shotType]) {
-    parts.push(SHOT_TYPE_PROMPTS[shot.shotType][language]);
+    framingParts.push(SHOT_TYPE_PROMPTS[shot.shotType][language]);
   }
 
+  // ── 2. Location (scene setting) ───────────────────────────────
+  const locationParts: string[] = [];
   if (location) {
-    parts.push(location.name);
+    locationParts.push(location.name);
+    if (location.description && location.description.length > 0) {
+      // Use first sentence of description as setting context
+      const firstSentence = location.description.split(/[。.！!]/)[0];
+      if (firstSentence && firstSentence.length > 0) {
+        locationParts.push(firstSentence);
+      }
+    }
     if (location.atmosphere) {
-      parts.push(location.atmosphere);
+      locationParts.push(location.atmosphere);
+    }
+    if (location.keyFeatures && location.keyFeatures.length > 0) {
+      // Take up to 3 key visual features for specificity
+      locationParts.push(...location.keyFeatures.slice(0, 3));
     }
   }
 
+  // ── 3. Lighting & time context ────────────────────────────────
+  const lightingParts: string[] = [];
+
+  if (shot.lightingType) {
+    const lightingDesc = getLightingDescription(shot.lightingType);
+    if (lightingDesc) lightingParts.push(lightingDesc);
+  }
+  if (shot.colorTone) {
+    lightingParts.push(shot.colorTone);
+  }
+  if (shot.lightingName) {
+    lightingParts.push(shot.lightingName);
+  }
+
+  // timeOfDay from shot metadata (stored as string)
+  const shotTimeOfDay = (shot as unknown as Record<string, string>).timeOfDay;
+  if (shotTimeOfDay) {
+    const timeOption = TIME_OF_DAY_OPTIONS.find(t => t.value === shotTimeOfDay);
+    if (timeOption) lightingParts.push(timeOption.label);
+  }
+
+  // ── 4. Atmosphere / mood ──────────────────────────────────────
+  const moodParts: string[] = [];
+
+  const shotMood = (shot as unknown as Record<string, string>).mood;
+  if (shotMood) {
+    const moodOption = MOOD_OPTIONS.find(m => m.value === shotMood);
+    if (moodOption) moodParts.push(moodOption.label);
+    else moodParts.push(shotMood);
+  }
+  if (shot.emotionCurve) {
+    moodParts.push(getMoodDescription(shot.emotionCurve));
+  }
+
+  // ── 5. Characters (most detailed section) ────────────────────
+  const characterParts: string[] = [];
   const shotCharacters = characters.filter(c => shot.characterIds?.includes(c.id));
+
   shotCharacters.forEach(char => {
-    parts.push(char.name);
+    const charDesc: string[] = [];
+
+    // Name as anchor
+    charDesc.push(isEnglish ? char.name : `角色${char.name}`);
+
+    // Appearance is the primary visual descriptor — always include in full
     if (char.appearance) {
-      parts.push(char.appearance);
+      charDesc.push(char.appearance);
     }
+
+    // Gender/age provide visual specificity that helps safety filters
+    if (char.age) charDesc.push(char.age);
+    if (char.gender) charDesc.push(char.gender);
+
+    // Personality keywords add behavioral context for the pose/expression
+    if (char.personality) {
+      // Trim to first 50 chars to avoid bloating the prompt
+      const shortPersonality = char.personality.split("；")[0].substring(0, 50);
+      if (shortPersonality) charDesc.push(shortPersonality);
+    }
+
+    characterParts.push(charDesc.filter(Boolean).join(", "));
   });
 
-  if ((shot as any).timeOfDay) {
-    const timeOption = TIME_OF_DAY_OPTIONS.find(t => t.value === (shot as any).timeOfDay);
-    if (timeOption) {
-      parts.push(timeOption.label);
-    }
+  // ── 6. Action / performance ───────────────────────────────────
+  const actionParts: string[] = [];
+
+  if (shot.performanceAction) {
+    actionParts.push(shot.performanceAction);
+  }
+  if (shot.performanceStart) {
+    actionParts.push(shot.performanceStart);
   }
 
-  if ((shot as any).mood) {
-    const moodOption = MOOD_OPTIONS.find(m => m.value === (shot as any).mood);
-    if (moodOption) {
-      parts.push(moodOption.label);
-    }
-  }
-
+  // ── 7. Scene description (narrative content) ──────────────────
   if (shot.description) {
-    parts.push(shot.description);
+    actionParts.push(shot.description);
   }
 
+  // ── 8. Technical camera params ────────────────────────────────
+  const technicalParts: string[] = [];
   if (config.includeTechnical !== false) {
     if (shot.cameraAngle && CAMERA_ANGLE_PROMPTS[shot.cameraAngle]) {
-      parts.push(CAMERA_ANGLE_PROMPTS[shot.cameraAngle][language]);
+      technicalParts.push(CAMERA_ANGLE_PROMPTS[shot.cameraAngle][language]);
     }
     if (shot.cameraMovement && CAMERA_MOVEMENT_PROMPTS[shot.cameraMovement]) {
-      parts.push(CAMERA_MOVEMENT_PROMPTS[shot.cameraMovement][language]);
+      technicalParts.push(CAMERA_MOVEMENT_PROMPTS[shot.cameraMovement][language]);
+    }
+    if (shot.focalLength) {
+      technicalParts.push(shot.focalLength);
+    }
+    if (shot.depthOfField) {
+      technicalParts.push(shot.depthOfFieldName || shot.depthOfField);
     }
   }
 
+  // ── 9. Quality suffix ─────────────────────────────────────────
+  const qualityParts: string[] = [];
   if (config.aspectRatio) {
-    parts.push(`aspect ratio ${config.aspectRatio}`);
+    qualityParts.push(`aspect ratio ${config.aspectRatio}`);
   }
-
   if (config.quality === "high") {
-    parts.push("high quality, detailed");
+    qualityParts.push("high quality, detailed");
   } else if (config.quality === "ultra") {
-    parts.push("ultra high quality, extremely detailed, 8k");
+    qualityParts.push("ultra high quality, extremely detailed, 8k");
   }
 
-  return parts.filter(Boolean).join(", ");
+  // ── Assemble in logical order ──────────────────────────────────
+  const allSections = [
+    framingParts.join(", "),
+    locationParts.join(", "),
+    lightingParts.join(", "),
+    moodParts.join(", "),
+    characterParts.join("; "),
+    actionParts.join(", "),
+    technicalParts.join(", "),
+    qualityParts.join(", "),
+  ];
+
+  return allSections.filter(s => s.length > 0).join(". ");
 }
 
 export function generateVideoPrompt(
@@ -165,27 +254,43 @@ export function generateVideoPrompt(
   location?: Location | null,
   config: PromptGenerationConfig = {}
 ): string {
+  // Base: full visual composition without technical camera
   const imagePrompt = generateImagePrompt(shot, characters, location, {
     ...config,
     includeTechnical: false,
   });
 
-  const parts: string[] = [imagePrompt];
   const language = config.language || "zh";
+  const motionParts: string[] = [imagePrompt];
 
+  // Camera movement is the primary motion descriptor for video
   if (shot.cameraMovement && CAMERA_MOVEMENT_PROMPTS[shot.cameraMovement]) {
-    parts.push(CAMERA_MOVEMENT_PROMPTS[shot.cameraMovement][language]);
+    motionParts.push(CAMERA_MOVEMENT_PROMPTS[shot.cameraMovement][language]);
+  }
+  if (shot.movementDetails) {
+    motionParts.push(shot.movementDetails);
+  }
+
+  // Camera angle (useful for Doubao video model)
+  if (shot.cameraAngle && CAMERA_ANGLE_PROMPTS[shot.cameraAngle]) {
+    motionParts.push(CAMERA_ANGLE_PROMPTS[shot.cameraAngle][language]);
+  }
+
+  // Performance end state helps define the motion arc
+  if (shot.performanceEnd) {
+    motionParts.push(shot.performanceEnd);
+  }
+
+  // Ambient/action sounds inform video mood
+  if (shot.ambientSound) {
+    motionParts.push(shot.ambientSound);
   }
 
   if (shot.duration) {
-    parts.push(`${shot.duration}s video`);
+    motionParts.push(`${shot.duration}s`);
   }
 
-  if (shot.cameraAngle && CAMERA_ANGLE_PROMPTS[shot.cameraAngle]) {
-    parts.push(CAMERA_ANGLE_PROMPTS[shot.cameraAngle][language]);
-  }
-
-  return parts.filter(Boolean).join(", ");
+  return motionParts.filter(Boolean).join(", ");
 }
 
 export function generatePromptWithCharacterExpression(

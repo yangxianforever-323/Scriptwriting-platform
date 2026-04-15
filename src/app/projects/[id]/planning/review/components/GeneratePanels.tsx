@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Spinner } from "@/components/ui/Spinner";
+import { ImageViewer } from "@/components/ui/ImageViewer";
 
 // ============================================
 // Character Generate Panel (Enhanced)
@@ -958,7 +959,8 @@ interface LocationGeneratePanelProps {
 }
 
 // View type mapping: index -> view key
-const VIEW_TYPE_MAP: Record<number, keyof LocationGeneratePanelProps['location']['viewImages']> = {
+type LocationViewKey = 'wide' | 'medium' | 'closeup' | 'aerial';
+const VIEW_TYPE_MAP: Record<number, LocationViewKey> = {
   0: 'wide',
   1: 'medium',
   2: 'closeup',
@@ -2762,6 +2764,414 @@ export function SceneGeneratePanel({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// Props Generate Panel (道具编辑面板)
+// ============================================
+
+interface PropsGeneratePanelProps {
+  prop: {
+    id?: string;
+    name: string;
+    type: "weapon" | "item" | "tool" | "accessory" | "other";
+    description: string;
+    holder?: string;
+    thumbnailUrl?: string;
+  };
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (updates: any) => void;
+  onViewImage?: (src: string, alt?: string) => void;
+}
+
+const PROP_TYPES = [
+  { value: "weapon", label: "武器", icon: "⚔️" },
+  { value: "item", label: "物品", icon: "📦" },
+  { value: "tool", label: "工具", icon: "🔧" },
+  { value: "accessory", label: "饰品", icon: "💍" },
+  { value: "other", label: "其他", icon: "📌" },
+];
+
+export function PropsGeneratePanel({
+  prop,
+  isOpen,
+  onClose,
+  onUpdate,
+  onViewImage,
+}: PropsGeneratePanelProps) {
+  const [activeTab, setActiveTab] = useState<"edit" | "generate">("generate");
+  const [generating, setGenerating] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [confirmedImage, setConfirmedImage] = useState<string | null>(null);
+  const [stylePreset, setStylePreset] = useState("");
+  
+  // 图片查看器状态
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const styleMap: Record<string, string> = {
+        "写实风": "realistic", "动漫风": "anime", "水墨风": "watercolor",
+        "油画风": "oil_painting", "赛博朋克": "cyberpunk", "古风": "fantasy",
+        "电影质感": "cinematic", "插画风": "cartoon", "3D渲染": "realistic"
+      };
+      
+      const response = await fetch("/api/ai/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `Professional product photography, studio lighting, ${prop.type}: ${prop.name}, ${prop.description || ""}. ${prompt || ""}. High quality, detailed, clean background.`,
+          style: styleMap[stylePreset] || "realistic",
+          type: "prop",
+          aspectRatio: "1:1",
+          resolution: "1K",
+          count: 1,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "图片生成失败");
+      
+      let images: string[] = [];
+      if (result.images && Array.isArray(result.images)) {
+        images = result.images.map((img: any) => img.url || img);
+      } else if (result.url) {
+        images = [result.url];
+      }
+      
+      if (images.length > 0) {
+        setGeneratedImages(images);
+      } else {
+        throw new Error("未返回有效图片");
+      }
+    } catch (error) {
+      console.error("Prop image generation error:", error);
+      alert(`生成失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-image", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { url } = await res.json();
+      setConfirmedImage(url);
+    } catch (err) {
+      alert("图片上传失败，请重试");
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={() => {
+          if (confirmedImage) onUpdate({ thumbnailUrl: confirmedImage });
+          onClose();
+        }}
+      />
+      
+      {/* Modal */}
+      <div className="relative w-full max-w-5xl h-[85vh] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden flex flex-col m-4">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <div>
+            <h2 className="text-lg font-semibold text-white">道具编辑 - {prop.name}</h2>
+            <p className="text-xs text-zinc-500 mt-1">编辑道具信息或生成道具图片</p>
+          </div>
+          <button
+            onClick={() => {
+              if (confirmedImage) onUpdate({ thumbnailUrl: confirmedImage });
+              onClose();
+            }}
+            className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* Left Panel - Edit Info */}
+          <div className="w-80 border-r border-zinc-800 p-4 overflow-y-auto space-y-4">
+            
+            {/* Thumbnail */}
+            <div 
+              className="aspect-square rounded-lg border-2 border-dashed border-zinc-700 flex items-center justify-center cursor-pointer hover:border-zinc-500 transition-colors relative group bg-zinc-800/50 overflow-hidden"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {confirmedImage || prop.thumbnailUrl ? (
+                <img 
+                  src={confirmedImage || prop.thumbnailUrl} 
+                  alt={prop.name}
+                  className="w-full h-full object-cover"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewImage?.(confirmedImage || prop.thumbnailUrl!, prop.name);
+                  }}
+                />
+              ) : (
+                <div className="text-center p-4">
+                  <svg className="w-12 h-12 mx-auto text-zinc-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <p className="text-xs text-zinc-500">点击上传图片</p>
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+            </div>
+
+            {/* Upload Button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full px-4 py-2 text-sm bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+              上传参考图
+            </button>
+
+            {/* Prop Info Form */}
+            <div className="space-y-3 pt-4 border-t border-zinc-800">
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">道具名称</label>
+                <input
+                  type="text"
+                  value={prop.name}
+                  onChange={(e) => onUpdate({ name: e.target.value })}
+                  placeholder="输入道具名称"
+                  className="w-full px-3 py-2 text-sm rounded border border-zinc-700 bg-zinc-800 text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">道具类型</label>
+                <select
+                  value={prop.type}
+                  onChange={(e) => onUpdate({ type: e.target.value as any })}
+                  className="w-full px-3 py-2 text-sm rounded border border-zinc-700 bg-zinc-800 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  {PROP_TYPES.map(pt => (
+                    <option key={pt.value} value={pt.value}>{pt.icon} {pt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">持有者</label>
+                <input
+                  type="text"
+                  value={prop.holder || ""}
+                  onChange={(e) => onUpdate({ holder: e.target.value })}
+                  placeholder="角色名称"
+                  className="w-full px-3 py-2 text-sm rounded border border-zinc-700 bg-zinc-800 text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">描述</label>
+                <textarea
+                  value={prop.description}
+                  onChange={(e) => onUpdate({ description: e.target.value })}
+                  placeholder="道具外观、材质、功能等描述"
+                  rows={4}
+                  className="w-full px-3 py-2 text-sm rounded border border-zinc-700 bg-zinc-800 text-white resize-none focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Right Panel - AI Generate */}
+          <div className="flex-1 flex flex-col">
+            
+            {/* Tab Header */}
+            <div className="flex gap-2 p-4 border-b border-zinc-800">
+              <button
+                onClick={() => setActiveTab("edit")}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  activeTab === "edit" ? "bg-zinc-700 text-white" : "bg-zinc-800/50 text-zinc-400 hover:text-white"
+                }`}
+              >编辑信息</button>
+              <button
+                onClick={() => setActiveTab("generate")}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  activeTab === "generate" ? "bg-purple-600 text-white" : "bg-zinc-800/50 text-zinc-400 hover:text-white"
+                }`}
+              >AI生成图</button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 p-4 overflow-y-auto">
+              {activeTab === "generate" && (
+                <div className="space-y-4">
+                  
+                  {/* Prompt Input */}
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-2">生成提示词</label>
+                    <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder={`描述 ${prop.name} 的外观细节...`}
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm rounded border border-zinc-700 bg-zinc-800 text-white resize-none focus:border-purple-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Style Selection */}
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-2">风格预设</label>
+                    <select
+                      value={stylePreset}
+                      onChange={(e) => setStylePreset(e.target.value)}
+                      className="w-full px-3 py-2 text-sm rounded border border-zinc-700 bg-zinc-800 text-white focus:border-purple-500 focus:outline-none"
+                    >
+                      <option value="">默认风格</option>
+                      <option value="写实风">写实摄影</option>
+                      <option value="动漫风">动漫插画</option>
+                      <option value="电影质感">电影质感</option>
+                      <option value="3D渲染">3D 渲染</option>
+                      <option value="油画风">油画艺术</option>
+                    </select>
+                  </div>
+
+                  {/* Generate Button */}
+                  <button
+                    onClick={handleGenerate}
+                    disabled={generating}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {generating ? (
+                      <>
+                        <Spinner size="sm" /> 生成中...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        生成道具图
+                      </>
+                    )}
+                  </button>
+
+                  {/* Generated Results */}
+                  {generatedImages.length > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-white">生成结果</span>
+                        <span className="text-xs text-zinc-500">点击选择</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {generatedImages.map((img, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => setConfirmedImage(img)}
+                            className={`rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group aspect-square ${
+                              confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
+                            }`}
+                          >
+                            <img 
+                              src={img} 
+                              alt={`生成${idx + 1}`} 
+                              className="w-full h-full object-cover"
+                              onDoubleClick={() => onViewImage?.(img, `生成的图片`)}
+                            />
+                            {confirmedImage === img && (
+                              <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center pointer-events-none">
+                                <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="text-[9px] bg-black/70 text-white px-1.5 py-0.5 rounded">双击放大</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Confirmed Image Preview */}
+                  {(confirmedImage || prop.thumbnailUrl) && (
+                    <div className="mt-6 p-4 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                      <p className="text-xs text-zinc-400 mb-2">已选择图片</p>
+                      <img 
+                        src={confirmedImage || prop.thumbnailUrl} 
+                        alt="已选择" 
+                        className="max-h-48 rounded-lg mx-auto cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => onViewImage?.(confirmedImage || prop.thumbnailUrl!, prop.name)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "edit" && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-zinc-800/30 rounded-lg border border-zinc-700">
+                    <h4 className="text-sm font-medium text-white mb-3">道具详情</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-zinc-500">类型：</span>
+                        <span className="text-white">{PROP_TYPES.find(p => p.value === prop.type)?.icon} {PROP_TYPES.find(p => p.value === prop.type)?.label}</span>
+                      </div>
+                      {prop.holder && (
+                        <div className="flex justify-between">
+                          <span className="text-zinc-500">持有者：</span>
+                          <span className="text-white">{prop.holder}</span>
+                        </div>
+                      )}
+                      <div className="pt-2 border-t border-zinc-700">
+                        <p className="text-zinc-500 text-xs mb-1">描述：</p>
+                        <p className="text-zinc-300 text-sm">{prop.description || "暂无描述"}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Toolbar */}
+        <div className="p-4 border-t border-zinc-800 flex items-center justify-between">
+          <div className="flex items-center gap-3 text-[10px] text-zinc-500">
+            <span>类型：{PROP_TYPES.find(p => p.value === prop.type)?.label}</span>
+            {prop.holder && <span>持有者：{prop.holder}</span>}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (confirmedImage) onUpdate({ thumbnailUrl: confirmedImage });
+                onClose();
+              }}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >确认保存</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Image Viewer */}
+      <ImageViewer
+        src={viewerImage || ""}
+        alt="道具图片"
+        isOpen={!!viewerImage}
+        onClose={() => setViewerImage(null)}
+      />
     </div>
   );
 }

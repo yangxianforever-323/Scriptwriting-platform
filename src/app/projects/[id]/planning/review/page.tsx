@@ -11,6 +11,7 @@ import {
   CharacterGeneratePanel,
   LocationGeneratePanel,
   SceneGeneratePanel,
+  PropsGeneratePanel,
 } from "./components/GeneratePanels";
 
 interface AnalysisCharacter {
@@ -174,7 +175,7 @@ export default function ReviewAnalysisPage() {
   const [saveStatus, setSaveStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "characters" | "locations" | "acts">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "characters" | "locations" | "acts" | "props">("overview");
   const [optimizing, setOptimizing] = useState<string | null>(null);
 
   // Generate Panel States
@@ -182,6 +183,7 @@ export default function ReviewAnalysisPage() {
   const [locationPanelIdx, setLocationPanelIdx] = useState<number | null>(null);
   const [scenePanelActIdx, setScenePanelActIdx] = useState<number | null>(null);
   const [scenePanelSceneIdx, setScenePanelSceneIdx] = useState<number | null>(null);
+  const [propPanelIdx, setPropPanelIdx] = useState<number | null>(null);
 
   // Global Image Viewer
   const { viewerImage, viewerAlt, openViewer, closeViewer, isOpen: viewerIsOpen } = useImageViewer();
@@ -607,6 +609,7 @@ export default function ReviewAnalysisPage() {
                 { key: "characters", label: `角色 (${analysisData.characters.length})` },
                 { key: "locations", label: `地点 (${analysisData.locations.length})` },
                 { key: "acts", label: `分幕 (${analysisData.acts.length})` },
+                { key: "props", label: `道具 (${analysisData.totalProps || 0})` },
               ].map(tab => (
                 <button
                   key={tab.key}
@@ -1210,6 +1213,188 @@ export default function ReviewAnalysisPage() {
           </div>
         </div>
 
+        {/* Props Tab */}
+        {activeTab === "props" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium text-zinc-900 dark:text-zinc-100">道具列表</h3>
+              <button
+                onClick={() => {
+                  setAnalysisData(prev => ({
+                    ...prev,
+                    totalProps: prev.totalProps + 1,
+                    acts: prev.acts.map((act, actIdx) => ({
+                      ...act,
+                      scenes: act.scenes.map(scene => ({
+                        ...scene,
+                        props: [...scene.props, {
+                          name: `新道具${prev.totalProps + 1}`,
+                          type: "item" as const,
+                          description: "",
+                        }]
+                      }))
+                    })),
+                  }));
+                  setHasUnsavedChanges(true);
+                }}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                添加道具
+              </button>
+            </div>
+
+            {/* Collect all unique props from scenes */}
+            <div className="space-y-4">
+              {[...new Map(
+                analysisData.acts.flatMap(act =>
+                  act.scenes.flatMap(scene =>
+                    scene.props.map(prop => [prop.name, prop] as const)
+                  )
+                )
+              ).values()].map((prop, idx) => (
+                <div key={prop.name || idx} className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 flex gap-4 hover:shadow-md transition-shadow">
+                  <div 
+                    className="w-20 h-20 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 flex-shrink-0 overflow-hidden cursor-pointer bg-zinc-50 dark:bg-zinc-900"
+                    onClick={() => setPropPanelIdx(idx)}
+                  >
+                    {prop.thumbnailUrl ? (
+                      <img src={prop.thumbnailUrl} alt={prop.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={prop.name}
+                        onChange={(e) => {
+                          const newName = e.target.value;
+                          setAnalysisData(prev => ({
+                            ...prev,
+                            acts: prev.acts.map(act => ({
+                              ...act,
+                              scenes: act.scenes.map(scene => ({
+                                ...scene,
+                                props: scene.props.map(p => p.name === prop.name ? { ...p, name: newName } : p)
+                              }))
+                            }))
+                          }));
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="text-base font-semibold text-zinc-900 dark:text-zinc-100 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1 -mx-1"
+                      />
+                      <span className={`px-2 py-0.5 text-xs rounded-full ${
+                        prop.type === "weapon" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                        prop.type === "tool" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" :
+                        prop.type === "accessory" ? "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400" :
+                        "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      }`}>
+                        {prop.type === "weapon" ? "⚔️ 武器" : prop.type === "tool" ? "🔧 工具" : prop.type === "accessory" ? "💍 饰品" : "📦 物品"}
+                      </span>
+                    </div>
+                    
+                    <select
+                      value={prop.type}
+                      onChange={(e) => {
+                        const newType = e.target.value as PropItem["type"];
+                        setAnalysisData(prev => ({
+                          ...prev,
+                          acts: prev.acts.map(act => ({
+                            ...act,
+                            scenes: act.scenes.map(scene => ({
+                              ...scene,
+                              props: scene.props.map(p => p.name === prop.name ? { ...p, type: newType } : p)
+                            }))
+                          }))
+                        }));
+                        setHasUnsavedChanges(true);
+                      }}
+                      className="text-xs text-zinc-500 dark:text-zinc-400 bg-transparent border border-zinc-200 dark:border-zinc-700 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="weapon">武器</option>
+                      <option value="item">物品</option>
+                      <option value="tool">工具</option>
+                      <option value="accessory">饰品</option>
+                      <option value="other">其他</option>
+                    </select>
+                    
+                    {prop.holder && (
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">持有者：{prop.holder}</p>
+                    )}
+                    
+                    <textarea
+                      value={prop.description}
+                      onChange={(e) => {
+                        const newDesc = e.target.value;
+                        setAnalysisData(prev => ({
+                          ...prev,
+                          acts: prev.acts.map(act => ({
+                            ...act,
+                            scenes: act.scenes.map(scene => ({
+                              ...scene,
+                              props: scene.props.map(p => p.name === prop.name ? { ...p, description: newDesc } : p)
+                            }))
+                          }))
+                        }));
+                        setHasUnsavedChanges(true);
+                      }}
+                      placeholder="道具描述..."
+                      rows={2}
+                      className="w-full mt-2 text-sm text-zinc-600 dark:text-zinc-300 bg-transparent border-none resize-none focus:outline-none"
+                    />
+                    
+                    <div className="flex justify-end mt-3 gap-2">
+                      <button
+                        onClick={() => setPropPanelIdx(idx)}
+                        className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        编辑图片
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`确定删除道具 "${prop.name}" 吗？`)) {
+                            setAnalysisData(prev => ({
+                              ...prev,
+                              totalProps: Math.max(0, (prev.totalProps || 0) - 1),
+                              acts: prev.acts.map(act => ({
+                                ...act,
+                                scenes: act.scenes.map(scene => ({
+                                  ...scene,
+                                  props: scene.props.filter(p => p.name !== prop.name)
+                                }))
+                              }))
+                            }));
+                            setHasUnsavedChanges(true);
+                          }
+                        }}
+                        className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded hover:bg-red-900/30 transition-colors flex items-center gap-1"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {(analysisData.totalProps || 0) === 0 && (
+              <div className="text-center py-12 text-zinc-500 dark:text-zinc-400">
+                <svg className="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                <p>暂无道具，点击上方按钮添加</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Generate Panels */}
         {characterPanelIdx !== null && (
           <CharacterGeneratePanel
@@ -1249,6 +1434,40 @@ export default function ReviewAnalysisPage() {
             onViewImage={openViewer}
           />
         )}
+
+        {propPanelIdx !== null && (() => {
+          const allProps = [...new Map(
+            analysisData.acts.flatMap(act =>
+              act.scenes.flatMap(scene =>
+                scene.props.map(prop => [prop.name, prop] as const)
+              )
+            )
+          ).values()];
+          const currentProp = allProps[propPanelIdx];
+          if (!currentProp) return null;
+          
+          return (
+            <PropsGeneratePanel
+              prop={currentProp}
+              isOpen={true}
+              onClose={() => setPropPanelIdx(null)}
+              onUpdate={(updates) => {
+                setAnalysisData(prev => ({
+                  ...prev,
+                  acts: prev.acts.map(act => ({
+                    ...act,
+                    scenes: act.scenes.map(scene => ({
+                      ...scene,
+                      props: scene.props.map(p => p.name === currentProp.name ? { ...p, ...updates } : p)
+                    }))
+                  }))
+                }));
+                setHasUnsavedChanges(true);
+              }}
+              onViewImage={openViewer}
+            />
+          );
+        })()}
 
         {/* Global Image Viewer */}
         <ImageViewer

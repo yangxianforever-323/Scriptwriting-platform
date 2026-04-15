@@ -26,75 +26,103 @@ async function analyzeNovelWithDeepSeek(
   onProgress?.({ status: "analyzing", progress: 10, message: "正在使用 AI 分析小说内容..." });
 
   if (!isDeepSeekConfigured()) {
-    console.warn("VOLC_API_KEY not configured, using mock analysis");
-    onProgress?.({ status: "parsing", progress: 50, message: "使用模拟分析..." });
-    const mockResult = generateEnhancedMockAnalysis(content, title);
-    onProgress?.({ status: "validating", progress: 80, message: "验证分析结果..." });
-    const validated = validateNovelAnalysis(mockResult);
-    onProgress?.({
-      status: "complete",
-      progress: 100,
-      message: "分析完成",
-      result: validated.data,
-    });
-    return validated;
+    throw new Error("AI分析服务未配置，请设置 VOLC_API_KEY 环境变量");
   }
 
-  const systemPrompt = `你是一个专业的小说分析助手。请分析用户提供的小说内容，并将其拆解为结构化的剧本元素。
+  const systemPrompt = `你是一个专业的影视制作前期分析专家，擅长将小说改编为可以直接用于AI视频生成的结构化剧本数据。
 
-请分析并返回以下JSON格式的数据：
+你的分析结果将直接驱动：1）AI图片生成（需要精确的视觉描述）2）AI视频生成（需要镜头运动和场景细节）3）分镜设计（需要完整的叙事结构）4）人物关系可视化（需要完整的关系网络）
+
+请严格按照以下JSON格式返回分析结果，所有字段尽量填写完整：
 
 {
   "title": "故事标题",
-  "logline": "一句话概括（50-100字）",
-  "synopsis": "详细概要（200-500字）",
-  "genre": "题材类型（如：都市、玄幻、科幻、悬疑、爱情等）",
-  "targetDuration": 预估时长（分钟，数字）,
+  "logline": "一句话概括故事核心冲突和主角目标（50-80字）",
+  "synopsis": "详细故事概要，包含开端-发展-高潮-结局的完整叙事弧线（300-600字）",
+  "genre": "核心题材（都市/玄幻/科幻/悬疑/爱情/武侠/历史/恐怖/喜剧/动作）",
+  "targetDuration": 预估剧集时长（分钟数字，根据故事复杂度，通常30-120）,
+
   "characters": [
     {
-      "name": "角色名",
-      "description": "角色描述",
-      "role": "protagonist（主角）/antagonist（反派）/supporting（配角）/minor（龙套）",
-      "appearance": "外貌特征简述"
+      "name": "角色全名（与原文一致）",
+      "description": "角色在故事中的作用和重要性（100字以上）",
+      "role": "protagonist（主角）/ antagonist（反派）/ supporting（重要配角）/ minor（次要角色）",
+      "age": "具体年龄或年龄段，如：28岁、中年男性、约50岁",
+      "gender": "男/女",
+      "appearance": "【关键字段】极详细的外貌描述：发型发色（如：及肩黑发、寸头、白发）、眼睛特征（如：狭长丹凤眼、大而圆的杏眼）、肤色（如：小麦色、白皙、古铜色）、身材体型（如：高挑纤细、肌肉健壮、矮小瘦削）、标志性服装（如：永远穿黑色风衣、宽袖汉服、职业西装）、特殊标记（如：左颊有疤、戴玉扳指）。必须150字以上，用于AI图片生成安全审核",
+      "personality": "性格特点：列出4-6个核心性格词并简要说明，如：外冷内热（表面冷漠但对家人极温柔）、城府极深（从不轻易表露真实意图）",
+      "background": "人物背景：出身家庭、成长经历、职业、社会地位、与其他角色的历史关联（150字以上）",
+      "motivation": "核心动机：这个角色最想要什么？是什么事件驱动他的行动？（50-80字，具体到事件）",
+      "arc": "成长弧线：角色从故事开始到结束经历了什么内心变化？变化的转折点是什么？（50-80字）"
     }
   ],
+
+  "relationships": [
+    {
+      "from": "角色A的名字（必须与characters数组中的名字完全一致）",
+      "to": "角色B的名字（必须与characters数组中的名字完全一致）",
+      "type": "关系类型，如：父子/母女/师徒/情侣/夫妻/兄弟姐妹/朋友/青梅竹马/对手/仇人/主仆/合作伙伴/上下级/暗恋/假夫妻",
+      "description": "详细描述两人之间的关系现状、历史纠葛和情感张力（80字以上）",
+      "dynamic": "关系动态，如：表面敌对实则互相欣赏/单方深情对方漠然/从仇敌到盟友的转变/相爱相杀"
+    }
+  ],
+
   "locations": [
     {
-      "name": "地点名称",
-      "description": "地点描述"
+      "name": "地点名称（简洁，与场景引用一致）",
+      "description": "地点详细描述，包含空间大小、结构布局、历史背景、氛围（150字以上）",
+      "type": "interior（室内）/ exterior（室外）/ both（室内外兼有）",
+      "atmosphere": "氛围关键词2-4个，如：神秘压抑、温馨宁静、壮阔雄伟、破败萧条、灯红酒绿",
+      "keyFeatures": ["视觉特征1（如：青石板地面）", "视觉特征2（如：朱红色大门）", "视觉特征3（如：满墙爬山虎）", "视觉特征4（如：正中供奉着神像）"],
+      "timeContext": "通常在什么时间/情境下出现，如：深夜密谋/白天交易/重要节点才出现"
     }
   ],
+
   "props": [
     {
       "name": "道具名称",
-      "description": "道具描述",
-      "importance": "key（关键道具）/supporting（辅助道具）/background（背景道具）"
+      "description": "道具在故事中的作用和象征意义（80字以上）",
+      "importance": "key（关键道具，直接推动剧情）/ supporting（辅助道具，增强场景真实感）/ background（背景道具，烘托氛围）",
+      "appearance": "道具的详细外观：颜色、材质、形状、大小、特殊标记或磨损痕迹（80字以上，用于AI图片生成）",
+      "holder": "主要持有者或使用者的角色名",
+      "storyRole": "在故事中的象征意义或关键作用，如：信物/证据/凶器/传家宝/身份象征"
     }
   ],
+
   "acts": [
     {
-      "title": "幕标题",
-      "description": "幕描述",
+      "title": "第X幕：幕名称（如：第一幕：命运交错）",
+      "description": "本幕的核心冲突、主要事件序列和戏剧性转折点（150字以上）",
       "scenes": [
         {
-          "title": "场景标题",
-          "description": "场景描述",
-          "location": "地点名称",
-          "characters": ["角色名1", "角色名2"],
-          "props": ["道具名1", "道具名2"]
+          "title": "场景标题（简洁有力）",
+          "description": "【最重要字段】详细场景描述：①发生了什么事 ②人物的具体行动和反应 ③关键对话或内心独白 ④场景对整体剧情的推进作用（250字以上，越详细越有利于后续分镜制作）",
+          "location": "地点名称（必须与上方locations数组中的name字段完全一致）",
+          "characters": ["出现在本场景的角色名1", "角色名2"],
+          "props": ["本场景用到的道具名1", "道具名2"],
+          "timeOfDay": "morning/afternoon/evening/night/dawn/noon",
+          "weather": "clear/cloudy/rainy/foggy/snowy/storm/hot",
+          "mood": "tense/warm/sad/joyful/mysterious/romantic/horror/solemn/melancholy/exciting/desperate",
+          "visualStyle": "视觉风格，如：高对比冷色调强调压迫感、暖金色逆光营造温馨、青绿色调渲染东方美学",
+          "cameraNote": "镜头建议，如：从俯拍全景切入人物特写、跟拍步伐节奏感强、固定镜头配合沉默张力",
+          "keyAction": "场景最核心的一个视觉动作（一句话，直接用于AI图片提示词，如：女子缓缓展开血染的信纸，烛光在她脸上投下阴影）",
+          "keyDialogue": "最能体现人物关系或推进剧情的一句台词（原文引用或提炼）"
         }
       ]
     }
   ]
 }
 
-注意：
-- 必须返回有效的JSON格式，可以被直接解析
-- 根据小说长度合理分幕，通常3-5幕
-- characters数组中最多包含5-8个主要角色
-- 场景描述要具体、有画面感
-- props数组中包含故事中出现的关键道具，特别是推动剧情发展的道具
-- 每个场景的props列出该场景中使用的道具名称`;
+【严格执行规则】：
+1. 必须返回可直接JSON.parse()的纯JSON，不要包含任何解释文字、注释或markdown代码块
+2. characters必须覆盖所有有实质戏份的角色（包括重要配角），上限15个。判断标准：在超过2个场景中出现、或对主角有直接影响、或参与关键冲突的角色都必须纳入
+3. relationships必须覆盖所有主要角色之间的关系，不遗漏任何有戏剧张力的关系
+4. locations要覆盖所有实际出现的场景，上限20个
+5. props要覆盖所有对剧情有影响的道具（包括信件、武器、信物、证件等），上限20个
+6. 每幕scenes数量3-8个，确保故事的每个重要情节片段都有对应场景
+7. appearance字段必须足够具体才能通过AI图像安全审核——禁止只写"英俊""美丽""普通"等模糊词，必须描述具体的面部特征、服装颜色材质、体型等可视化信息
+8. description字段要有强烈画面感，能直接指导AI生成视频分镜
+9. keyAction字段直接决定图片生成质量，必须描述具体的可视化动作（如"老人颤抖着双手将玉佩递给跪地的少年"而非"场景感人"）`;
 
   const userPrompt = `请分析以下小说内容（标题：${title || "未命名"}）：
 
@@ -172,24 +200,8 @@ ${sanitizeNovelContent(content)}
 
     return validated;
   } catch (error) {
-    console.warn("DeepSeek API failed, falling back to mock analysis:", error);
-    onProgress?.({
-      status: "analyzing",
-      progress: 40,
-      message: "AI 分析遇到问题，使用备用方案...",
-    });
-
-    const mockResult = generateEnhancedMockAnalysis(content, title);
-    onProgress?.({ status: "validating", progress: 80, message: "验证分析结果..." });
-    const validated = validateNovelAnalysis(mockResult);
-    onProgress?.({
-      status: "complete",
-      progress: 100,
-      message: "分析完成（使用备用方案）",
-      result: validated.data,
-    });
-
-    return validated;
+    console.error("DeepSeek API failed:", error);
+    throw error;
   }
 }
 
@@ -209,12 +221,12 @@ export async function POST(request: Request) {
     let validationResult: ValidationResult | null = null;
 
     if (!isDeepSeekConfigured()) {
-      console.warn("VOLC_API_KEY not configured, using mock analysis");
-      const mockAnalysis = generateEnhancedMockAnalysis(content, title);
-      validationResult = validateNovelAnalysis(mockAnalysis);
-    } else {
-      validationResult = await analyzeNovelWithDeepSeek(content, title);
+      return NextResponse.json(
+        { error: "AI分析服务未配置，请联系管理员设置 VOLC_API_KEY" },
+        { status: 503 }
+      );
     }
+    validationResult = await analyzeNovelWithDeepSeek(content, title);
 
     return NextResponse.json({
       success: true,
@@ -225,25 +237,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Error analyzing novel:", error);
-
-    try {
-      const { content, title } = await request.clone().json();
-      const mockAnalysis = generateEnhancedMockAnalysis(content, title);
-      const validationResult = validateNovelAnalysis(mockAnalysis);
-
-      return NextResponse.json({
-        success: true,
-        result: validationResult.data,
-        estimatedTime: estimateAnalysisTime(content?.length || 0),
-        warnings: [...validationResult.warnings.map((w) => w.message), "使用备用分析方案"],
-        hasValidationWarnings: true,
-      });
-    } catch {
-      return NextResponse.json(
-        { error: "分析失败，请重试" },
-        { status: 500 }
-      );
-    }
+    const message = error instanceof Error ? error.message : "分析失败";
+    return NextResponse.json(
+      { error: `小说分析失败：${message}，请检查网络后重试` },
+      { status: 500 }
+    );
   }
 }
 

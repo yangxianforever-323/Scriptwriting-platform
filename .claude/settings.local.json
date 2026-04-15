@@ -3,7 +3,11 @@
     "allow": [
       "Bash(grep -n \"SceneGeneratePanel\\\\|export function Scene\" /d/Trae_project/Scriptwriting/src/app/projects/[id]/planning/review/components/GeneratePanels.tsx)",
       "Bash(awk 'NR>=738 && NR<=741' /d/Trae_project/Scriptwriting/src/app/projects/[id]/planning/review/components/GeneratePanels.tsx)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(ls /d/Trae_project/Scriptwriting/src/app/projects/[id]/story/tabs/)",
+      "Bash(grep -n \"interface Shot\\\\|interface Story\\\\|interface Character\\\\|interface Location\" /d/Trae_project/Scriptwriting/src/types/*.ts)",
+      "Bash(ls /d/Trae_project/Scriptwriting/src/app/api/projects/[id]/shots/)",
+      "Bash(ls /d/Trae_project/Scriptwriting/src/app/api/projects/[id]/storyboard-data/)"
     ]
   }
 }

@@ -175,26 +175,53 @@ export interface NovelAnalysisResult {
     name: string;
     description: string;
     role: "protagonist" | "antagonist" | "supporting" | "minor";
-    appearance: string;
+    appearance: string;          // 外貌特征（发型、肤色、身材、服装风格等）
+    age?: string;                // 年龄或年龄段（如"25岁"、"中年"）
+    gender?: string;             // 性别
+    personality?: string;        // 性格特点（3-5个关键词）
+    background?: string;         // 人物背景（出身、经历）
+    motivation?: string;         // 核心动机（角色想要什么）
+    arc?: string;                // 成长弧线（角色如何变化）
+  }>;
+  relationships?: Array<{        // 人物关系网络
+    from: string;                // 关系发起方角色名
+    to: string;                  // 关系对象角色名
+    type: string;                // 关系类型：父子/母女/师徒/情侣/夫妻/兄弟/朋友/对手/仇人/主仆/合作伙伴
+    description: string;         // 关系详细描述（包括关系的演变过程）
+    dynamic?: string;            // 关系动态：互相信任/单方爱慕/明争暗斗/相互利用
   }>;
   locations: Array<{
     name: string;
     description: string;
+    type?: "interior" | "exterior" | "both"; // 室内/室外/两者兼有
+    atmosphere?: string;                      // 氛围关键词（如：阴森、温馨、壮阔）
+    keyFeatures?: string[];                   // 3-5个视觉关键特征（用于生成图片）
+    timeContext?: string;                     // 常见出现时间（白天/夜晚/黄昏）
   }>;
   props: Array<{
     name: string;
     description: string;
     importance: "key" | "supporting" | "background";
+    appearance?: string;         // 道具的外观描述（用于生成）
+    holder?: string;             // 持有者（哪个角色持有/使用）
+    storyRole?: string;          // 在故事中的象征意义或作用
   }>;
   acts: Array<{
     title: string;
     description: string;
     scenes: Array<{
       title: string;
-      description: string;
+      description: string;       // 详细的场景描述（150字以上）
       location: string;
       characters: string[];
       props: string[];
+      timeOfDay?: string;        // 时间段：morning/afternoon/evening/night/dawn
+      weather?: string;          // 天气：clear/cloudy/rainy/foggy/snowy/storm
+      mood?: string;             // 情绪基调：tense/warm/sad/joyful/mysterious/romantic/horror
+      visualStyle?: string;      // 视觉风格建议（如：高对比度、柔光、冷色调）
+      cameraNote?: string;       // 运镜建议（如：主观视角、特写、航拍）
+      keyAction?: string;        // 关键动作/事件（场景最重要发生了什么）
+      keyDialogue?: string;      // 关键台词（最能体现人物性格或推进剧情的一句话）
     }>;
   }>;
 }

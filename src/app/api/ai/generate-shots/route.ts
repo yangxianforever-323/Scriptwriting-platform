@@ -9,12 +9,20 @@ interface SceneData {
   characterIds?: string[];
   locationId?: string;
   propIds?: string[];
+  timeOfDay?: string;
+  weather?: string;
+  mood?: string;
+  notes?: string;
 }
 
 interface CharacterData {
   id: string;
   name: string;
   appearance?: string;
+  age?: string;
+  gender?: string;
+  personality?: string;
+  motivation?: string;
 }
 
 interface LocationData {
@@ -22,6 +30,7 @@ interface LocationData {
   name: string;
   description: string;
   atmosphere?: string;
+  keyFeatures?: string[];
 }
 
 interface PropData {
@@ -83,7 +92,14 @@ export async function POST(request: Request) {
           return scene.propIds && scene.propIds.includes(p.id);
         });
 
-        const shots = generateShotsForScene(scene, sceneCharacters, loc, sceneProps, act, shotsPerScene);
+        const shots = generateShotsForScene(
+          scene as SceneData,
+          sceneCharacters as CharacterData[],
+          loc as LocationData | null,
+          sceneProps as PropData[],
+          act,
+          shotsPerScene
+        );
 
         shots.forEach(function(shotData: any, index: number) {
           const createdShot = shotDb.create(storyboardId, Object.assign({}, shotData, {
@@ -152,7 +168,8 @@ function generateShotsForScene(
         ? [propIds[0]]
         : propIds;
 
-    const imagePrompt = buildImagePrompt(scene.description, characters, sceneProps, location, isCloseUp);
+    const imagePrompt = buildImagePrompt(scene, characters, sceneProps, location, isCloseUp);
+    const videoPrompt = buildVideoPrompt(scene, characters, location, config, isCloseUp);
 
     shots.push({
       title: shotTitles[i] || (scene.title + " - 镜头" + (i + 1)),
@@ -177,8 +194,12 @@ function generateShotsForScene(
       characterIds: shotCharacterIds,
       locationId: location ? location.id : scene.locationId,
       propIds: shotPropIds,
+      // Pass scene metadata so prompt-generation.ts can use timeOfDay/mood
+      timeOfDay: scene.timeOfDay || "",
+      weather: scene.weather || "",
+      mood: scene.mood || "",
       imagePrompt: imagePrompt,
-      videoPrompt: imagePrompt,
+      videoPrompt: videoPrompt,
       creativeIntent: isEstablishing
         ? ("建立" + (location ? location.name : "场景") + "的环境氛围")
         : isCloseUp && characters.length > 0
@@ -191,42 +212,84 @@ function generateShotsForScene(
 }
 
 function buildImagePrompt(
-  basePrompt: string,
+  scene: SceneData,
   characters: CharacterData[],
   props: PropData[],
   location: LocationData | null,
   focusOnCharacter: boolean
 ): string {
-  const parts: string[] = [basePrompt];
+  const parts: string[] = [];
 
+  // Cinematic preamble for safety filter compliance
+  parts.push("cinematic film still, professional cinematography");
+
+  // Location context
   if (location) {
-    parts.push(location.name);
-    if (location.atmosphere) {
-      parts.push(location.atmosphere);
+    const locParts = [location.name];
+    if (location.atmosphere) locParts.push(location.atmosphere);
+    if (location.keyFeatures && location.keyFeatures.length > 0) {
+      locParts.push(...location.keyFeatures.slice(0, 2));
     }
+    parts.push(locParts.join(", "));
   }
 
+  // Time of day and mood from scene
+  if (scene.timeOfDay) parts.push(scene.timeOfDay);
+  if (scene.mood) parts.push(scene.mood);
+
+  // Characters with full appearance data
   if (characters.length > 0) {
     if (focusOnCharacter && characters[0]) {
       const char = characters[0];
-      parts.push(char.name);
-      if (char.appearance) parts.push(char.appearance);
+      const charParts = [char.name];
+      if (char.appearance) charParts.push(char.appearance);
+      if (char.age) charParts.push(char.age);
+      if (char.gender) charParts.push(char.gender);
+      parts.push(charParts.filter(Boolean).join(", "));
     } else {
       characters.forEach(function(char: CharacterData): void {
-        parts.push(char.name);
-        if (char.appearance) parts.push(char.appearance);
+        const charParts = [char.name];
+        if (char.appearance) charParts.push(char.appearance);
+        parts.push(charParts.filter(Boolean).join(", "));
       });
     }
   }
 
-  if (props.length > 0) {
-    props.forEach(function(prop: PropData): void {
-      parts.push(prop.name);
-      if (prop.description) parts.push(prop.description);
-    });
+  // Scene description as narrative context
+  if (scene.description) parts.push(scene.description);
+
+  // Key notes (contains visualStyle, cameraNote, keyAction from apply-analysis)
+  if (scene.notes) {
+    // Only take the first note segment (keyAction) to keep prompt focused
+    const firstNote = scene.notes.split(" | ")[0];
+    if (firstNote) parts.push(firstNote);
   }
 
-  return parts.filter(Boolean).join(", ");
+  return parts.filter(Boolean).join(". ");
+}
+
+function buildVideoPrompt(
+  scene: SceneData,
+  characters: CharacterData[],
+  location: LocationData | null,
+  shotConfig: ShotConfig,
+  focusOnCharacter: boolean
+): string {
+  const base = buildImagePrompt(scene, characters, [], location, focusOnCharacter);
+
+  const motionParts: string[] = [base];
+
+  // Camera movement for video
+  const movementNames: Record<string, string> = {
+    static: "static shot", push: "dolly in", pull: "dolly out",
+    track: "tracking shot", pan: "pan", tilt: "tilt",
+    orbit: "orbit", crane_up: "crane up", crane_down: "crane down",
+  };
+  if (shotConfig.cameraMovement && movementNames[shotConfig.cameraMovement]) {
+    motionParts.push(movementNames[shotConfig.cameraMovement]);
+  }
+
+  return motionParts.filter(Boolean).join(", ");
 }
 
 function getShotTypeName(shotType: string): string {

@@ -5,7 +5,7 @@
  * Reference: D:\Trae_project\Design-main\src\services\ai.ts
  */
 
-const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "sk-hRBF4qgq2Y4ZPlWKBSQyIHIWNHK1R9JVcGvY466R5u7xXEBA";
+const VECTOR_ENGINE_API_KEY = process.env.GEMINI_API_KEY || "";
 const VECTOR_ENGINE_BASE_URL = process.env.GEMINI_BASE_URL || "https://api.vectorengine.ai";
 const DEFAULT_MODEL = "gemini-3.1-flash-image-preview";
 
