@@ -1246,12 +1246,32 @@ export function LocationGeneratePanel({
                     setGeneratedImages([]);
                     setConfirmedImage(null);
                     try {
-                      // 构建全景图提示词
+                      // 获取当前视角已确认或已保存的图片作为参考
+                      const viewKey = VIEW_TYPE_MAP[selectedAngle];
+                      const currentViewImage = location.viewImages?.[viewKey];
+                      const sourceImage = confirmedImage || currentViewImage || location.thumbnailUrl;
+                      
+                      // 构建参考图列表：优先使用已确认的图片，其次是上传的参考图
+                      const refUrls: string[] = [];
+                      if (sourceImage) {
+                        refUrls.push(sourceImage);
+                      }
+                      // 添加用户上传的参考图
+                      referenceImages.forEach(img => {
+                        if (!refUrls.includes(img.url)) {
+                          refUrls.push(img.url);
+                        }
+                      });
+                      
+                      // 构建全景图提示词 - 基于已有图片扩展
                       const basePrompt = locationPrompt.trim() ||
                         `${location.name}，${location.description?.substring(0, 100) || ""}，${location.atmosphere || ""}`;
-                      const panoramaPrompt = `${basePrompt}，360 degree panoramic view, equirectangular projection, seamless spherical panorama, immersive environment, continuous wrap-around view, high dynamic range, HDR lighting`;
                       
-                      const refUrls = referenceImages.map(img => img.url);
+                      // 如果有参考图，使用扩展提示词；否则使用标准提示词
+                      const panoramaPrompt = sourceImage 
+                        ? `${basePrompt}，extend this scene into a seamless 360 degree panoramic view, equirectangular projection, maintain consistent style and lighting, expand the environment in all directions, continuous wrap-around view, no visible seams, HDR lighting, spherical panorama`
+                        : `${basePrompt}，360 degree panoramic view, equirectangular projection, seamless spherical panorama, immersive environment, continuous wrap-around view, high dynamic range, HDR lighting`;
+                      
                       const response = await fetch("/api/ai/generate-image", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -1276,7 +1296,7 @@ export function LocationGeneratePanel({
                       if (images.length > 0) {
                         setGeneratedImages(images);
                         // 标记为全景图类型
-                        alert("360度全景图生成成功！\n\n提示：\n1. 右键点击图片可保存\n2. 可在VR/3D软件中使用等距圆柱投影格式\n3. 建议使用专业软件转换为HDR格式");
+                        alert(`360度全景图生成成功！${sourceImage ? '\n\n已基于当前视角图片进行扩展生成。' : ''}\n\n提示：\n1. 右键点击图片可保存\n2. 可在VR/3D软件中使用等距圆柱投影格式\n3. 建议使用专业软件转换为HDR格式`);
                       } else {
                         throw new Error("未返回有效图片");
                       }
