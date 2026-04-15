@@ -67,12 +67,16 @@ export function CharacterGeneratePanel({
   const [resolution, setResolution] = useState("1024x1536");
   const [quantity, setQuantity] = useState(1);
   const [stylePreset, setStylePreset] = useState("");
-  const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  // 按类型存储生成的图片，每个类型保留自己的生成结果
+  const [generatedImagesByType, setGeneratedImagesByType] = useState<Record<string, string[]>>({});
   const [confirmedImage, setConfirmedImage] = useState<string | null>(null);
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
   
   // 保存位置选择状态
   const [saveToImageType, setSaveToImageType] = useState<string>(selectedImageType);
+  
+  // 获取当前类型生成的图片
+  const generatedImages = generatedImagesByType[selectedImageType] || [];
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -508,7 +512,11 @@ export function CharacterGeneratePanel({
                     }
 
                     if (images.length > 0) {
-                      setGeneratedImages(images);
+                      // 按类型保存生成的图片，保留其他类型的生成结果
+                      setGeneratedImagesByType(prev => ({
+                        ...prev,
+                        [selectedImageType]: images
+                      }));
                       setSaveToImageType(selectedImageType); // 默认保存到当前选中的类型
                     } else {
                       console.log("API response:", result);
@@ -815,7 +823,11 @@ export function CharacterGeneratePanel({
                 <button
                   onClick={() => { 
                     setConfirmedImage(null); 
-                    setGeneratedImages([]); 
+                    // 只清除当前类型的生成图片
+                    setGeneratedImagesByType(prev => ({
+                      ...prev,
+                      [selectedImageType]: []
+                    }));
                   }}
                   className="px-3 py-1.5 text-xs bg-red-900/20 text-red-400 rounded hover:bg-red-900/30 transition-colors flex items-center gap-1"
                 >
