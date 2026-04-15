@@ -1756,6 +1756,7 @@ export function LocationGeneratePanel({
                         
                         // 延迟添加点击事件监听，避免立即触发
                         setTimeout(() => document.addEventListener('click', closeMenu), 100);
+                        return;
                       }}
                       className={`aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all relative group ${
                         confirmedImage === img ? "border-green-500 ring-2 ring-green-500/30" : "border-transparent hover:border-zinc-500"
