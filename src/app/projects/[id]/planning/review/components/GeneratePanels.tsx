@@ -15,6 +15,13 @@ interface CharacterGeneratePanelProps {
     role: string;
     appearance: string;
     thumbnailUrl?: string;
+    typeImages?: {
+      portrait?: string;
+      fullbody?: string;
+      combo?: string;
+      "fullbody-threeview"?: string;
+      "closeup-threeview"?: string;
+    };
   };
   isOpen: boolean;
   onClose: () => void;
@@ -27,7 +34,7 @@ const IMAGE_TYPES = [
   { key: "combo", label: "组合图", desc: "肖像+全身三视图" },
   { key: "fullbody-threeview", label: "全身三视图", desc: "正/侧/背全身" },
   { key: "closeup-threeview", label: "特写三视图", desc: "头肩正/侧/背" },
-];
+] as const;
 
 const ASPECT_RATIOS = [
   { value: "1:1", label: "1:1" },
@@ -543,10 +550,17 @@ export function CharacterGeneratePanel({
           <div className="p-4 border-t border-zinc-700 space-y-2">
             <button
               onClick={() => {
-                // 保存已确认或生成的图片
-                const img = confirmedImage || generatedImages[0] || character.thumbnailUrl;
+                // 保存已确认或生成的图片到对应类型
+                const img = confirmedImage || generatedImages[0];
                 if (img) {
-                  onUpdate({ thumbnailUrl: img });
+                  const currentTypeImages = character.typeImages || {};
+                  onUpdate({ 
+                    thumbnailUrl: img,
+                    typeImages: {
+                      ...currentTypeImages,
+                      [selectedImageType]: img,
+                    }
+                  });
                 }
                 onClose();
               }}
@@ -764,7 +778,18 @@ export function CharacterGeneratePanel({
               <button
                 onClick={() => {
                   const img = confirmedImage || generatedImages[0];
-                  if (img) { onUpdate({ thumbnailUrl: img }); onClose(); }
+                  if (img) {
+                    // 保存到对应类型的图片
+                    const currentTypeImages = character.typeImages || {};
+                    onUpdate({ 
+                      thumbnailUrl: img,
+                      typeImages: {
+                        ...currentTypeImages,
+                        [selectedImageType]: img,
+                      }
+                    });
+                    onClose();
+                  }
                   else alert("请先选择或生成图片");
                 }}
                 className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
@@ -797,11 +822,25 @@ interface LocationGeneratePanelProps {
     description: string;
     atmosphere?: string;
     thumbnailUrl?: string;
+    viewImages?: {
+      wide?: string;
+      medium?: string;
+      closeup?: string;
+      aerial?: string;
+    };
   };
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updates: any) => void;
 }
+
+// View type mapping: index -> view key
+const VIEW_TYPE_MAP: Record<number, keyof LocationGeneratePanelProps['location']['viewImages']> = {
+  0: 'wide',
+  1: 'medium',
+  2: 'closeup',
+  3: 'aerial',
+};
 
 const REFERENCE_TAGS = [
   { key: "composition", label: "构图", color: "blue" },
@@ -1188,10 +1227,18 @@ export function LocationGeneratePanel({
           <div className="p-4 border-t border-zinc-700">
             <button
               onClick={() => {
-                // 保存已确认或生成的图片
-                const img = confirmedImage || generatedImages[0] || location.thumbnailUrl;
+                // 保存已确认或生成的图片到对应视角
+                const img = confirmedImage || generatedImages[0];
                 if (img) {
-                  onUpdate({ thumbnailUrl: img });
+                  const viewKey = VIEW_TYPE_MAP[selectedAngle];
+                  const currentViewImages = location.viewImages || {};
+                  onUpdate({ 
+                    thumbnailUrl: img,
+                    viewImages: {
+                      ...currentViewImages,
+                      [viewKey]: img,
+                    }
+                  });
                 }
                 onClose();
               }}
@@ -1268,9 +1315,15 @@ export function LocationGeneratePanel({
               </div>
               <div className="grid grid-cols-4 gap-3">
                 {ANGLE_LABELS.map((label, i) => {
-                  // 第一个视角显示已确认或已保存的图片
-                  const hasSavedImage = i === 0 && (confirmedImage || location.thumbnailUrl);
-                  const savedImageUrl = confirmedImage || location.thumbnailUrl;
+                  // 获取对应视角已保存的图片
+                  const viewKey = VIEW_TYPE_MAP[i];
+                  const viewImages = location.viewImages || {};
+                  const savedViewImage = viewImages[viewKey];
+                  // 当前选中视角显示 confirmedImage，其他视角显示保存的图片
+                  const displayImage = i === selectedAngle 
+                    ? (confirmedImage || savedViewImage)
+                    : savedViewImage;
+                  const hasImage = !!displayImage;
                   
                   return (
                     <div
@@ -1282,9 +1335,9 @@ export function LocationGeneratePanel({
                           : "border-zinc-700 bg-zinc-800 hover:border-zinc-500"
                       }`}
                     >
-                      {hasSavedImage ? (
+                      {hasImage ? (
                         <>
-                          <img src={savedImageUrl!} alt={label} className="absolute inset-0 w-full h-full object-cover" />
+                          <img src={displayImage!} alt={label} className="absolute inset-0 w-full h-full object-cover" />
                           <div className="absolute inset-0 bg-black/30"></div>
                           <div className="relative z-10 flex flex-col items-center">
                             <span className={`text-[10px] ${selectedAngle === i ? "text-green-400 font-medium" : "text-white"}`}>{label}</span>
@@ -1375,7 +1428,19 @@ export function LocationGeneratePanel({
                 onClick={() => {
                   const img = confirmedImage || generatedImages[0];
                   if (!img) { alert("请先生成并选择图片"); return; }
-                  onUpdate({ thumbnailUrl: img });
+                  
+                  // 获取当前选中的视角类型
+                  const viewKey = VIEW_TYPE_MAP[selectedAngle];
+                  const currentViewImages = location.viewImages || {};
+                  
+                  // 更新对应视角的图片，同时更新 thumbnailUrl 为当前图片
+                  onUpdate({ 
+                    thumbnailUrl: img,
+                    viewImages: {
+                      ...currentViewImages,
+                      [viewKey]: img,
+                    }
+                  });
                   onClose();
                 }}
                 disabled={generating}

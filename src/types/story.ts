@@ -55,7 +55,17 @@ export interface StoryScene {
   notes: string;
 }
 
-// Character
+// Character Image Types for multi-type image storage
+export type CharacterImageType = "portrait" | "fullbody" | "combo" | "fullbody-threeview" | "closeup-threeview";
+
+export interface CharacterTypeImages {
+  portrait?: string;           // 肖像图
+  fullbody?: string;           // 全身图
+  combo?: string;              // 组合图
+  "fullbody-threeview"?: string;  // 全身三视图
+  "closeup-threeview"?: string;   // 特写三视图
+}
+
 export type CharacterRole = "protagonist" | "antagonist" | "supporting" | "minor";
 
 export interface Character {
@@ -71,12 +81,22 @@ export interface Character {
   motivation: string;
   arc: string;
   referenceImages: string[];
+  typeImages?: CharacterTypeImages;  // 多类型图片
   tags: string[];
   createdAt: string;
   updatedAt: string;
 }
 
-// Location
+// Location View Types for multi-angle image storage
+export type LocationViewType = "wide" | "medium" | "closeup" | "aerial";
+
+export interface LocationViewImages {
+  wide?: string;      // 广角全景
+  medium?: string;    // 中景构图
+  closeup?: string;   // 特写细节
+  aerial?: string;    // 俯视/仰视
+}
+
 export type LocationType = "interior" | "exterior" | "both";
 
 export interface Location {
@@ -88,6 +108,7 @@ export interface Location {
   atmosphere: string;
   keyFeatures: string[];
   referenceImages: string[];
+  viewImages?: LocationViewImages;  // 多视角图片
   tags: string[];
   createdAt: string;
   updatedAt: string;
